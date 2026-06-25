@@ -13,7 +13,7 @@ workflows:
     max_build_duration: 60
 
     integrations:
-      app_store_connect: lull_asc_api_key   # must match your Codemagic integration name
+      app_store_connect: "Codemagic Lull"   # must match your Codemagic integration name
 
     environment:
       node: 20
