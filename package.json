@@ -2,11 +2,16 @@
   "name": "lull-site",
   "private": true,
   "version": "2.0.0",
-  "description": "Lull — landing + installable web app (Cloudflare Worker + static assets)",
+  "description": "Lull — landing + installable web app (Cloudflare Worker + static assets), wrapped as an iOS app via Capacitor",
   "scripts": {
-    "build": "node build.mjs",
+    "build": "node build.mjs && node build-ios.mjs",
     "deploy": "npm run build && wrangler deploy",
     "dev": "npm run build && wrangler dev"
+  },
+  "dependencies": {
+    "@capacitor/cli": "^6.0.0",
+    "@capacitor/core": "^6.0.0",
+    "@capacitor/ios": "^6.0.0"
   },
   "devDependencies": {
     "esbuild": "0.21.5",
