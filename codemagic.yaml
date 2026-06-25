@@ -4,7 +4,8 @@
 # One-time setup in the Codemagic UI before the first run:
 #   1. Add this GitHub repo as an app.
 #   2. Settings -> Integrations -> Developer Portal: add your App Store Connect API key
-#      (.p8 + Issuer ID + Key ID, "App Manager" access) and note its name.
+#      ("App Manager" access). Integration name must match `app_store_connect` below.
+#   3. Add a SECURE env var CERTIFICATE_PRIVATE_KEY (a PEM RSA private key) in group "appstore".
 #
 workflows:
   ios-release:
@@ -16,6 +17,8 @@ workflows:
       app_store_connect: "Codemagic Lull"   # must match your Codemagic integration name
 
     environment:
+      groups:
+        - appstore                          # holds CERTIFICATE_PRIVATE_KEY (secure)
       node: 20
       xcode: latest
       cocoapods: default
@@ -59,14 +62,17 @@ workflows:
       - name: Sign and build the signed IPA
         script: |
           set -e
-          # Best-effort: pin the app target's bundle id to match the App ID + profile
+          # Pin the app target's bundle id to match the App ID + profile
           sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = [^;]*;/PRODUCT_BUNDLE_IDENTIFIER = $BUNDLE_ID;/g" \
             ios/App/App.xcodeproj/project.pbxproj || true
-          # Create (or fetch) the distribution cert + App Store profile, then add the cert
+          # Create (or reuse) the distribution cert from OUR persistent private key, + the profile
           keychain initialize
-          app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --certificate-key @env:CERTIFICATE_PRIVATE_KEY \
+            --create
           keychain add-certificates
-          # Apply the profile AND archive in the SAME step so the signing state is fresh
+          # Apply the profile AND archive in the same step so signing state is fresh
           xcode-project use-profiles
           xcode-project build-ipa \
             --workspace "ios/App/App.xcworkspace" \
