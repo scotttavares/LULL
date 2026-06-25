@@ -42,7 +42,11 @@ workflows:
 
       - name: Generate app icon + splash from assets/
         script: |
-          npx capacitor-assets generate --ios || echo "asset generation skipped"
+          if [ -f assets/icon.png ]; then
+            npx --yes @capacitor/assets@3 generate --ios
+          else
+            echo "no assets/icon.png — skipping asset generation"
+          fi
 
       - name: Skip export-compliance prompt (no non-exempt encryption)
         script: |
