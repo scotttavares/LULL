@@ -3,9 +3,8 @@
 #
 # One-time setup in the Codemagic UI before the first run:
 #   1. Add this GitHub repo as an app.
-#   2. Teams -> Integrations -> Developer Portal: add your App Store Connect API key
-#      (.p8 + Issuer ID + Key ID) and NAME THE INTEGRATION EXACTLY:  lull_asc_api_key
-#      (or rename the reference below to whatever you call it).
+#   2. Settings -> Integrations -> Developer Portal: add your App Store Connect API key
+#      (.p8 + Issuer ID + Key ID, "App Manager" access) and name it:  lull_asc_api_key
 #
 workflows:
   ios-release:
@@ -14,12 +13,9 @@ workflows:
     max_build_duration: 60
 
     integrations:
-      app_store_connect: lull_asc_api_key   # <-- must match your Codemagic integration name
+      app_store_connect: lull_asc_api_key   # must match your Codemagic integration name
 
     environment:
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.tinybirdbigdreams.lull
       node: 20
       xcode: latest
       cocoapods: default
@@ -60,8 +56,13 @@ workflows:
           cd ios/App
           agvtool new-version -all "$NEW"
 
-      - name: Apply signing profiles
+      - name: Set up code signing (fetch or create the distribution cert + profile)
         script: |
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+          keychain add-certificates
           xcode-project use-profiles
 
       - name: Build signed IPA (iPhone only)
