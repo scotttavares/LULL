@@ -48,11 +48,23 @@ workflows:
             echo "no assets/icon.png — skipping asset generation"
           fi
 
-      - name: Skip export-compliance prompt (no non-exempt encryption)
+      - name: Configure Info.plist (encryption, portrait, full-screen)
         script: |
           PLIST="ios/App/App/Info.plist"
+          # no non-exempt encryption -> skips the App Store export-compliance prompt
           /usr/libexec/PlistBuddy -c "Set :ITSAppUsesNonExemptEncryption NO" "$PLIST" \
             || /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool NO" "$PLIST"
+          # lock iPhone to portrait
+          /usr/libexec/PlistBuddy -c "Delete :UISupportedInterfaceOrientations" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations array" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations:0 string UIInterfaceOrientationPortrait" "$PLIST"
+          # lock iPad to portrait
+          /usr/libexec/PlistBuddy -c "Delete :UISupportedInterfaceOrientations~ipad" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations~ipad array" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations~ipad:0 string UIInterfaceOrientationPortrait" "$PLIST"
+          # always full-screen on iPad (no Split View / Slide Over resizing)
+          /usr/libexec/PlistBuddy -c "Set :UIRequiresFullScreen YES" "$PLIST" 2>/dev/null \
+            || /usr/libexec/PlistBuddy -c "Add :UIRequiresFullScreen bool YES" "$PLIST"
 
       - name: Set build number (auto-increment from App Store Connect)
         script: |
@@ -76,12 +88,13 @@ workflows:
             --certificate-key @env:CERTIFICATE_PRIVATE_KEY \
             --create
           keychain add-certificates
-          # Apply the profile AND archive in the same step so signing state is fresh
+          # Apply the profile AND archive in the same step so signing state is fresh.
+          # TARGETED_DEVICE_FAMILY=1,2 -> universal (iPhone + iPad).
           xcode-project use-profiles
           xcode-project build-ipa \
             --workspace "ios/App/App.xcworkspace" \
             --scheme "App" \
-            --archive-flags "TARGETED_DEVICE_FAMILY=1"
+            --archive-flags "TARGETED_DEVICE_FAMILY=1,2"
 
     artifacts:
       - build/ios/ipa/*.ipa
