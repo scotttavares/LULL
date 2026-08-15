@@ -65,6 +65,15 @@ workflows:
           # always full-screen on iPad (no Split View / Slide Over resizing)
           /usr/libexec/PlistBuddy -c "Set :UIRequiresFullScreen YES" "$PLIST" 2>/dev/null \
             || /usr/libexec/PlistBuddy -c "Add :UIRequiresFullScreen bool YES" "$PLIST"
+          # Marketing version (CFBundleShortVersionString), sourced from package.json.
+          # App Store Connect rejects any upload whose version is not HIGHER than the last
+          # approved version, so bump "version" in package.json for each release
+          # (currently 2.0.0, which is > the approved 1.0). The build number is handled
+          # separately (next step, auto-incremented from App Store Connect).
+          APP_VERSION=$(node -p "require('./package.json').version")
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $APP_VERSION" "$PLIST" \
+            || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $APP_VERSION" "$PLIST"
+          echo "Set CFBundleShortVersionString to $APP_VERSION"
 
       - name: Set build number (auto-increment from App Store Connect)
         script: |
