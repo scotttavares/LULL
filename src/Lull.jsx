@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import { Volume2, VolumeX } from "lucide-react";
+import { Volume2, VolumeX, Sun, Moon } from "lucide-react";
 
 // Lull — a minute to breathe.  Tiny Bird, Big Dreams.
 // A living smoke-plasma orb (six themes, three swirl styles) that breathes with you.
@@ -54,7 +54,7 @@ function makeTheme(s) {
     amb1Night: `radial-gradient(circle, ${rgba(nc[0], 0.16)}, rgba(0,0,0,0) 70%)`,
     amb2Night: `radial-gradient(circle, ${rgba(nw[0], 0.14)}, rgba(0,0,0,0) 70%)`,
     ringFromNight: hexOf(nc[0]), ringToNight: hexOf(nw[0]),
-    name: s.name, style: s.style, coolRGB: s.cool, warmRGB: s.warm, glass: s.glass,
+    name: s.name, style: s.style, coolRGB: s.cool, warmRGB: s.warm, glass: s.glass, bloom: s.bloom,
     swatch: `linear-gradient(135deg, ${rgba(s.cool[0], 1)} 0%, ${rgba(s.warm[0], 1)} 100%)`,
     blobCool: blobs(s.cool), blobWarm: blobs(s.warm),
     coolGlow: `radial-gradient(circle, ${rgba(s.cool[0], 0.6)}, rgba(0,0,0,0) 70%)`,
@@ -73,9 +73,9 @@ function makeTheme(s) {
 }
 
 const THEMES = {
-  aurora: makeTheme({ name: "Aurora", style: "nebula", cool: [[157, 140, 255], [96, 150, 255], [214, 150, 255]], warm: [[255, 186, 150], [255, 130, 110], [255, 214, 176]], ring: ["#9D8CFF", "#FF9E7D"], day: ["#1c1133", "#0a0613", "#070410"], night: ["#120a22", "#080510", "#05030c"], glass: { irid: 0.40, rim: 200, sheen: "33% 25%", spread: 44, gx: 31, gy: 23, g2: 0, holo: 0 } }),
-  tide: makeTheme({ name: "Tide", style: "filament", cool: [[120, 210, 255], [80, 160, 245], [110, 255, 225]], warm: [[255, 205, 150], [255, 150, 120], [255, 225, 180]], ring: ["#6FE0FF", "#FFB27A"], day: ["#09202e", "#06121d", "#040b13"], night: ["#06141d", "#040c14", "#03080e"], glass: { irid: 0.72, rim: 150, sheen: "28% 20%", spread: 36, gx: 26, gy: 19, g2: 0.9, holo: 0.18 } }),
-  sunfire: makeTheme({ name: "Sunfire", style: "filament", cool: [[255, 140, 200], [210, 120, 255], [255, 120, 160]], warm: [[255, 170, 90], [255, 110, 70], [255, 200, 120]], ring: ["#FF8CC8", "#FF7E46"], day: ["#2a0f1c", "#160812", "#0c040a"], night: ["#1e0a15", "#0f060d", "#080308"], glass: { irid: 0.30, rim: 290, sheen: "37% 24%", spread: 40, gx: 35, gy: 21, g2: 0.5, holo: 0.06 } }),
+  aurora: makeTheme({ name: "Aurora", style: "nebula", cool: [[157, 140, 255], [96, 150, 255], [214, 150, 255]], warm: [[255, 186, 150], [255, 130, 110], [255, 214, 176]], ring: ["#9D8CFF", "#FF9E7D"], day: ["#1c1133", "#0a0613", "#070410"], night: ["#120a22", "#080510", "#05030c"], bloom: [[198,182,255],[111,178,255],[255,143,206],[119,240,208],[255,190,148]], glass: { irid: 0.40, rim: 200, sheen: "33% 25%", spread: 44, gx: 31, gy: 23, g2: 0, holo: 0 } }),
+  tide: makeTheme({ name: "Tide", style: "filament", cool: [[120, 210, 255], [80, 160, 245], [110, 255, 225]], warm: [[255, 205, 150], [255, 150, 120], [255, 225, 180]], ring: ["#6FE0FF", "#FFB27A"], day: ["#09202e", "#06121d", "#040b13"], night: ["#06141d", "#040c14", "#03080e"], bloom: [[120,210,255],[110,255,225],[130,180,255],[120,240,235],[170,225,255]], glass: { irid: 0.72, rim: 150, sheen: "28% 20%", spread: 36, gx: 26, gy: 19, g2: 0.9, holo: 0.18 } }),
+  sunfire: makeTheme({ name: "Sunfire", style: "filament", cool: [[255, 140, 200], [210, 120, 255], [255, 120, 160]], warm: [[255, 170, 90], [255, 110, 70], [255, 200, 120]], ring: ["#FF8CC8", "#FF7E46"], day: ["#2a0f1c", "#160812", "#0c040a"], night: ["#1e0a15", "#0f060d", "#080308"], bloom: [[255,150,200],[210,120,255],[255,140,170],[255,180,120],[255,205,150]], glass: { irid: 0.30, rim: 290, sheen: "37% 24%", spread: 40, gx: 35, gy: 21, g2: 0.5, holo: 0.06 } }),
 };
 
 const ORB_BASE_DAY = "radial-gradient(circle at 50% 47%, rgba(20,16,38,0.34) 0%, rgba(7,4,16,0.82) 80%)";
@@ -92,6 +92,11 @@ const DURATIONS = { breathe: [1, 3, 5], sleep: [15, 30, 60] };
 const DEFAULT_PATTERN = { breathe: "calm", sleep: "drift" };
 const DEFAULT_DUR = { breathe: 3, sleep: 15 };
 const SOUND = [{ id: "bowls", name: "Bowls" }, { id: "handpan", name: "Handpan" }, { id: "binaural", name: "Binaural" }];
+const HIST_KEY = "lull.sessions.v1";
+const DAY_MS = 86400000;
+function loadHist() { try { const r = JSON.parse(localStorage.getItem(HIST_KEY) || "[]"); return Array.isArray(r) ? r : []; } catch (e) { return []; } }
+function saveHist(list) { try { localStorage.setItem(HIST_KEY, JSON.stringify(list.slice(-300))); } catch (e) {} }
+function minutesSince(list, sinceMs) { return list.reduce((a, s) => a + (s && s.min && (!sinceMs || s.t >= sinceMs) ? s.min : 0), 0); }
 
 function makeIR(ctx, seconds, decay) {
   const len = Math.floor(ctx.sampleRate * seconds); const buf = ctx.createBuffer(2, len, ctx.sampleRate);
@@ -191,6 +196,9 @@ export default function Lull() {
   const [durationMin, setDurationMin] = useState(3);
   const [soundOn, setSoundOn] = useState(true);
   const [scapeId, setScapeId] = useState("bowls");
+  const [light, setLight] = useState(false);
+  const [sessions, setSessions] = useState(() => (typeof window !== "undefined" ? loadHist() : []));
+  const [showHistory, setShowHistory] = useState(false);
 
   const [phaseLabel, setPhaseLabel] = useState("Breathe in");
   const [tone, setTone] = useState("cool");
@@ -202,12 +210,15 @@ export default function Lull() {
 
   const phasesRef = useRef([]); const idxRef = useRef(0); const elapsedRef = useRef(0); const targetRef = useRef(0);
   const pausedRef = useRef(false); const phaseTimeout = useRef(null); const tickRef = useRef(null);
-  const soundRef = useRef(soundOn); const modeRef = useRef(mode);
+  const soundRef = useRef(soundOn); const modeRef = useRef(mode); const patternIdRef = useRef(patternId);
   const audioRef = useRef(null); const nodesRef = useRef(null); const scapeRef = useRef(null); const brownRef = useRef(null); const whiteRef = useRef(null); const scapeIdRef = useRef("bowls");
 
   useEffect(() => { soundRef.current = soundOn; }, [soundOn]);
   useEffect(() => { modeRef.current = mode; }, [mode]);
+  useEffect(() => { patternIdRef.current = patternId; }, [patternId]);
   useEffect(() => { scapeIdRef.current = scapeId; }, [scapeId]);
+  useEffect(() => { try { if (window.matchMedia) setLight(window.matchMedia("(prefers-color-scheme: light)").matches); } catch (e) {} }, []);
+  useEffect(() => { try { const on = light && mode !== "sleep"; document.documentElement.style.colorScheme = on ? "light" : "dark"; const m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute("content", on ? "#faf4ee" : "#0a0613"); } catch (e) {} }, [light, mode]);
 
   const clearTimers = useCallback(() => {
     if (phaseTimeout.current) clearTimeout(phaseTimeout.current);
@@ -279,7 +290,7 @@ export default function Lull() {
   const pauseSession = () => { pausedRef.current = true; setPaused(true); if (phaseTimeout.current) clearTimeout(phaseTimeout.current); setPhaseLabel("Paused"); setOrb({ scale: prefersReduced ? 0.95 : 0.92, dur: 0.8, ease: "ease" }); softenAmbience(); };
   const resumeSession = () => { pausedRef.current = false; setPaused(false); ensureAudio(); if (soundRef.current && !scapeRef.current) buildAmbience(); runPhase(); };
   const goHome = () => { clearTimers(); pausedRef.current = false; setPaused(false); teardownAmbience(0.9); setScreen("home"); setOrb({ scale: LO, dur: 1, ease: "ease" }); setRemaining(durationMin * 60); setProgress(0); };
-  function finishSession() { clearTimers(); pausedRef.current = false; setPaused(false); if (modeRef.current === "breathe") bowl("done"); teardownAmbience(modeRef.current === "sleep" ? 3.4 : 1.6); setScreen("done"); }
+  function finishSession() { clearTimers(); pausedRef.current = false; setPaused(false); if (modeRef.current === "breathe") bowl("done"); teardownAmbience(modeRef.current === "sleep" ? 3.4 : 1.6); try { const entry = { t: Date.now(), mode: modeRef.current, pattern: patternIdRef.current, min: Math.max(1, Math.round(targetRef.current / 60)) }; setSessions((prev) => { const next = [...prev, entry]; saveHist(next); return next; }); } catch (e) {} setScreen("done"); }
   const switchMode = (m) => { if (m === mode) return; clearTimers(); teardownAmbience(0.4); setMode(m); setScreen("home"); setPatternId(DEFAULT_PATTERN[m]); setDurationMin(DEFAULT_DUR[m]); setRemaining(DEFAULT_DUR[m] * 60); setProgress(0); setTone("cool"); setOrb({ scale: LO, dur: 1, ease: "ease" }); };
   const toggleSound = () => {
     ensureAudio(); const next = !soundOn; setSoundOn(next); soundRef.current = next;
@@ -332,8 +343,13 @@ export default function Lull() {
   const C = 2 * Math.PI * R;
   const pats = PATTERNS[mode];
 
-  const root = { minHeight: "100vh", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden", background: night ? th.rootNight : th.rootDay, color: "#F3EFFF", fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif', WebkitFontSmoothing: "antialiased", transition: "background 1.4s ease" };
-  const frame = { position: "relative", zIndex: 2, width: "100%", maxWidth: 460, minHeight: "min(100vh, 820px)", padding: "26px 26px 40px", display: "flex", flexDirection: "column", alignItems: "center" };
+  const lightUI = light && !night;
+  const ink = lightUI ? "#2b2447" : "#F3EFFF";
+  const inkA = (a) => (lightUI ? `rgba(43,36,71,${a})` : `rgba(243,239,255,${a})`);
+  const wa = (a) => (lightUI ? `rgba(70,52,120,${a})` : `rgba(255,255,255,${a})`);
+  const LIGHT_ROOT = "radial-gradient(125% 110% at 50% 6%, #faf4ee 0%, #f2eaef 55%, #ece1e9 100%)";
+  const root = { minHeight: "100vh", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden", background: night ? th.rootNight : (lightUI ? LIGHT_ROOT : th.rootDay), color: ink, fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif', WebkitFontSmoothing: "antialiased", transition: "background 1.4s ease, color 1.4s ease" };
+  const frame = { position: "relative", zIndex: 2, width: "100%", maxWidth: 460, minHeight: "min(100vh, 820px)", padding: "max(26px, calc(env(safe-area-inset-top) + 6px)) 26px calc(40px + env(safe-area-inset-bottom))", display: "flex", flexDirection: "column", alignItems: "center" };
   const css = `
     * { box-sizing: border-box; }
     body { margin: 0; }
@@ -343,6 +359,10 @@ export default function Lull() {
     @keyframes swirlSpin { from { transform: rotate(0deg);} to { transform: rotate(360deg);} }
     @keyframes swirlSpinRev { from { transform: rotate(360deg);} to { transform: rotate(0deg);} }
     @keyframes coreScale { 0%,100% { transform: scale(0.95);} 50% { transform: scale(1.1);} }
+    @keyframes driftA1 { 0%,100% { transform: translate(-6%,-4%) scale(1);} 50% { transform: translate(6%,6%) scale(1.08);} }
+    @keyframes driftA2 { 0%,100% { transform: translate(5%,4%) scale(1.05);} 50% { transform: translate(-5%,-6%) scale(1);} }
+    @keyframes driftA3 { 0%,100% { transform: translate(4%,6%) scale(1);} 50% { transform: translate(-6%,-4%) scale(1.1);} }
+    @keyframes driftA4 { 0%,100% { transform: translate(-5%,5%) scale(1.06);} 50% { transform: translate(6%,-5%) scale(1);} }
     .orb-idle { animation: orbIdle 7s ease-in-out infinite; }
     .amb1 { animation: drift1 24s ease-in-out infinite; }
     .amb2 { animation: drift2 30s ease-in-out infinite; }
@@ -358,10 +378,10 @@ export default function Lull() {
     ::selection { background: rgba(255,158,125,0.35); }
     @media (prefers-reduced-motion: reduce) { .orb-idle,.amb1,.amb2 { animation: none !important; } }
   `;
-  const segWrap = { display: "flex", gap: 8, width: "100%", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 18, padding: 6 };
-  const seg = (sel) => ({ flex: 1, padding: "12px 8px", borderRadius: 13, border: "1px solid transparent", background: sel ? "rgba(255,255,255,0.10)" : "transparent", color: sel ? "#F8F5FF" : "rgba(243,239,255,0.5)", transition: "background .35s ease, color .35s ease", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 });
-  const glassBtn = { "--glow": ringFrom, "--glow2": ringTo, position: "relative", overflow: "hidden", padding: "17px 0", width: "100%", borderRadius: 999, color: "#FBFAFF", fontSize: 16.5, fontWeight: 600, letterSpacing: 0.8, boxShadow: `0 14px 46px ${ringFrom}40, 0 6px 18px ${ringTo}30, 0 1px 0 rgba(255,255,255,0.18), inset 0 1.4px 0.5px rgba(255,255,255,0.66), inset 0 -1.2px 1px rgba(255,255,255,0.30), inset 0 0 18px rgba(255,255,255,0.10), inset 0 -14px 26px rgba(0,0,0,0.18)`, transition: "transform .2s cubic-bezier(.2,.8,.2,1), box-shadow .3s ease, filter .45s ease" };
-  const textBtn = { padding: "12px 18px", color: "rgba(243,239,255,0.5)", fontSize: 14, letterSpacing: 0.3 };
+  const segWrap = { display: "flex", gap: 8, width: "100%", background: wa(0.05), border: "1px solid " + wa(0.1), borderRadius: 18, padding: 6 };
+  const seg = (sel) => ({ flex: 1, padding: "12px 8px", borderRadius: 13, border: "1px solid transparent", background: sel ? wa(0.12) : "transparent", color: sel ? ink : inkA(0.5), transition: "background .35s ease, color .35s ease", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 });
+  const glassBtn = lightUI ? { "--glow": ringFrom, "--glow2": ringTo, position: "relative", overflow: "hidden", padding: "17px 0", width: "100%", borderRadius: 999, color: "#2a1c55", fontSize: 16.5, fontWeight: 600, letterSpacing: 0.8, background: "linear-gradient(178deg, #efe7ff, #c3acff)", border: "1px solid rgba(120,90,220,0.4)", boxShadow: `0 12px 34px ${ringFrom}33, inset 0 1.4px 0.5px rgba(255,255,255,0.7), inset 0 -8px 18px rgba(120,90,200,0.16)`, transition: "transform .2s cubic-bezier(.2,.8,.2,1), box-shadow .3s ease, filter .45s ease" } : { "--glow": ringFrom, "--glow2": ringTo, position: "relative", overflow: "hidden", padding: "17px 0", width: "100%", borderRadius: 999, color: "#FBFAFF", fontSize: 16.5, fontWeight: 600, letterSpacing: 0.8, boxShadow: `0 14px 46px ${ringFrom}40, 0 6px 18px ${ringTo}30, 0 1px 0 rgba(255,255,255,0.18), inset 0 1.4px 0.5px rgba(255,255,255,0.66), inset 0 -1.2px 1px rgba(255,255,255,0.30), inset 0 0 18px rgba(255,255,255,0.10), inset 0 -14px 26px rgba(0,0,0,0.18)`, transition: "transform .2s cubic-bezier(.2,.8,.2,1), box-shadow .3s ease, filter .45s ease" };
+  const textBtn = { padding: "12px 18px", color: inkA(0.5), fontSize: 14, letterSpacing: 0.3 };
 
   // a rotating, turbulence-displaced, masked smoke layer (cool + warm crossfaded)
   const smokeLayer = (coolBg, warmBg, blur, spin, rev, filterId, mask) => (
@@ -414,6 +434,7 @@ export default function Lull() {
       <div style={frame}>
         <div style={{ position: "relative", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", minHeight: 36, marginBottom: 8 }}>
           <span style={{ fontSize: 14, letterSpacing: 6, textTransform: "uppercase", fontWeight: 500, opacity: 0.82, paddingLeft: 6 }}>Lull</span>
+          <button className="lull-btn" aria-label={lightUI ? "Switch to dark" : "Switch to light"} onClick={() => setLight((v) => !v)} style={{ position: "absolute", left: 0, padding: 8, opacity: 0.7, display: night ? "none" : "flex" }}>{lightUI ? <Moon size={19} /> : <Sun size={19} />}</button>
           <button className="lull-btn" aria-label={soundOn ? "Mute sound" : "Unmute sound"} aria-pressed={soundOn} onClick={toggleSound} style={{ position: "absolute", right: 0, padding: 8, opacity: 0.7, display: "flex" }}>{soundOn ? <Volume2 size={20} /> : <VolumeX size={20} />}</button>
         </div>
 
@@ -429,14 +450,14 @@ export default function Lull() {
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, width: "100%", opacity: dim, transition: "opacity 1.2s ease" }}>
             <div style={{ position: "relative", width: S, height: S, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <svg width={S} height={S} style={{ position: "absolute", inset: 0, transform: "rotate(-90deg)" }}>
-                <circle cx={S / 2} cy={S / 2} r={R} fill="none" stroke="rgba(243,239,255,0.10)" strokeWidth={2} />
+                <circle cx={S / 2} cy={S / 2} r={R} fill="none" stroke={inkA(0.14)} strokeWidth={2} />
                 <circle cx={S / 2} cy={S / 2} r={R} fill="none" stroke="url(#ring)" strokeWidth={3} strokeLinecap="round" strokeDasharray={C} strokeDashoffset={C * (1 - (active ? progress : screen === "done" ? 1 : 0))} style={{ transition: "stroke-dashoffset .3s linear", opacity: active || screen === "done" ? 1 : 0 }} />
                 <defs><linearGradient id="ring" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor={ringFrom} /><stop offset="100%" stopColor={ringTo} /></linearGradient></defs>
               </svg>
 
               <div className={idle ? "orb-idle" : ""} style={{ width: ORB, height: ORB, borderRadius: "50%", position: "relative", display: "flex", alignItems: "center", justifyContent: "center", willChange: "transform", ...(idle ? {} : { transform: `scale(${orb.scale})`, transition: `transform ${orb.dur}s ${orb.ease}` }) }}>
                 <div style={{ position: "absolute", inset: -46, borderRadius: "50%", background: isCool ? glowCool : glowWarm, filter: "blur(36px)", transition: "background 1.2s ease", zIndex: 0 }} />
-                <div style={{ position: "absolute", inset: 0, borderRadius: "50%", overflow: "hidden", zIndex: 1, boxShadow: "inset 0 0 42px rgba(0,0,0,0.6), inset 0 1px 14px rgba(255,255,255,0.12)" }}>
+                <div style={{ position: "absolute", inset: 0, borderRadius: "50%", overflow: "hidden", zIndex: 1, display: "none", boxShadow: "inset 0 0 42px rgba(0,0,0,0.6), inset 0 1px 14px rgba(255,255,255,0.12)" }}>
                   <div style={{ position: "absolute", inset: 0, background: orbBase, transition: "background 1.2s ease" }} />
                   {/* lit core */}
                   <div style={{ position: "absolute", inset: "-6%", zIndex: 1, animation: prefersReduced ? "none" : "coreScale 9s ease-in-out infinite" }}>
@@ -456,11 +477,22 @@ export default function Lull() {
                   <div style={{ position: "absolute", inset: 0, borderRadius: "50%", background: `radial-gradient(circle at ${th.glass.gx}% ${th.glass.gy}%, rgba(255,255,255,${sheenOp * 1.7}), rgba(255,255,255,0) 13%)`, zIndex: 7 }} />
                   {th.glass.g2 > 0 && (<div style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "radial-gradient(circle at 67% 73%, rgba(255,255,255,0.5), rgba(255,255,255,0) 7%)", zIndex: 7, opacity: night ? th.glass.g2 * 0.6 : th.glass.g2 }} />)}
                 </div>
+                {/* Aurora Bloom orb — Direction A (v2) */}
+                <div style={{ position: "absolute", inset: 0, borderRadius: "50%", overflow: "hidden", zIndex: 2, isolation: "isolate", boxShadow: "inset 0 1px 14px rgba(255,255,255,0.16)" }}>
+                  <div style={{ position: "absolute", inset: 0, background: night ? "radial-gradient(circle at 50% 40%, #4a3d7a 0%, #2c2258 55%, #171036 100%)" : "radial-gradient(circle at 50% 40%, #7d68c8 0%, #59459b 54%, #382a74 100%)", transition: "background 1.2s ease" }} />
+                  {th.bloom.map((c, i) => { const pos = [[32,32],[68,62],[60,74],[36,66],[72,32]][i]; const reach = [52,50,48,48,46][i]; const blur = [12,13,13,14,13][i]; const dur = [15,19,17,21,23][i]; const anim = ["driftA1","driftA2","driftA3","driftA4","driftA2"][i]; return (
+                    <div key={i} style={{ position: "absolute", width: "118%", height: "118%", borderRadius: "50%", mixBlendMode: "screen", opacity: (night ? 0.72 : 1) * (i === 4 ? 0.92 : 1), background: `radial-gradient(circle at ${pos[0]}% ${pos[1]}%, rgb(${c[0]},${c[1]},${c[2]}), transparent ${reach}%)`, filter: `blur(${blur}px)`, animation: prefersReduced ? "none" : `${anim} ${dur}s ease-in-out infinite${i === 4 ? " reverse" : ""}`, willChange: "transform" }} />); })}
+                  <div style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "radial-gradient(circle at 48% 40%, rgba(255,255,255,0.72) 0%, rgba(255,255,255,0.16) 12%, rgba(255,255,255,0) 30%)", filter: "blur(3px)", zIndex: 3 }} />
+                  <div style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "radial-gradient(circle at 50% 42%, transparent 46%, rgba(20,10,45,0.28) 82%, rgba(12,6,30,0.5) 100%)", zIndex: 3 }} />
+                  <div style={{ position: "absolute", width: "26%", height: "20%", left: "22%", top: "16%", borderRadius: "50%", background: "radial-gradient(circle at 40% 40%, rgba(255,255,255,0.85), rgba(255,255,255,0) 70%)", filter: "blur(2px)", zIndex: 4 }} />
+                </div>
+                <div style={{ position: "absolute", inset: 0, borderRadius: "50%", zIndex: 5, pointerEvents: "none", background: "radial-gradient(circle at 50% 50%, transparent 66%, rgba(255,255,255,0.16) 71%, transparent 74%)" }} />
               </div>
 
-              <div style={{ position: "absolute", textAlign: "center", zIndex: 6, pointerEvents: "none" }}>
+              <div style={{ position: "absolute", textAlign: "center", zIndex: 6, pointerEvents: "none", color: "#F6F2FF" }}>
                 {active ? (<div style={{ fontSize: 29, fontWeight: 200, letterSpacing: 1, textShadow: "0 2px 22px rgba(0,0,0,0.65)" }}>{phaseLabel}</div>)
                   : sleepDone ? null : (<>
+                    <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: 6, textIndent: 6, opacity: 0.5, marginBottom: 10, textShadow: "0 2px 14px rgba(0,0,0,0.6)" }}>LULL</div>
                     <div style={{ fontSize: 22, fontWeight: 300, letterSpacing: 0.5, textShadow: "0 2px 20px rgba(0,0,0,0.6)" }}>{pats[patternId].name}</div>
                     <div style={{ fontSize: 12, letterSpacing: 3, opacity: 0.75, marginTop: 4, textShadow: "0 1px 14px rgba(0,0,0,0.6)" }}>{pats[patternId].ratio}</div></>)}
               </div>
@@ -473,7 +505,7 @@ export default function Lull() {
           <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ display: "flex", gap: 12, justifyContent: "center", padding: "2px 0 4px" }}>
               {Object.entries(THEMES).map(([id, t]) => { const sel = themeId === id; return (
-                <button key={id} className="lull-dot lull-btn" aria-label={`Orb theme: ${t.name}`} aria-pressed={sel} title={t.name} onClick={() => setThemeId(id)} style={{ width: 30, height: 30, borderRadius: "50%", padding: 0, backgroundImage: t.swatch, border: "1px solid rgba(255,255,255,0.25)", boxShadow: sel ? "0 0 0 2px rgba(255,255,255,0.9), 0 3px 12px rgba(0,0,0,0.45)" : "0 2px 8px rgba(0,0,0,0.35)", transform: sel ? "scale(1.14)" : "scale(1)", transition: "transform .2s ease, box-shadow .2s ease" }} />); })}
+                <button key={id} className="lull-dot lull-btn" aria-label={`Orb theme: ${t.name}`} aria-pressed={sel} title={t.name} onClick={() => setThemeId(id)} style={{ width: 30, height: 30, borderRadius: "50%", padding: 0, backgroundImage: t.swatch, border: "1px solid " + wa(0.3), boxShadow: sel ? (lightUI ? "0 0 0 2px rgba(70,50,140,0.8), 0 3px 12px rgba(80,60,140,0.25)" : "0 0 0 2px rgba(255,255,255,0.9), 0 3px 12px rgba(0,0,0,0.45)") : (lightUI ? "0 2px 8px rgba(80,60,140,0.2)" : "0 2px 8px rgba(0,0,0,0.35)"), transform: sel ? "scale(1.14)" : "scale(1)", transition: "transform .2s ease, box-shadow .2s ease" }} />); })}
             </div>
             <div style={segWrap}>
               {Object.entries(pats).map(([id, p]) => { const sel = patternId === id; return (<button key={id} className="lull-seg lull-btn" aria-pressed={sel} onClick={() => setPatternId(id)} style={seg(sel)}><span style={{ fontSize: 14, fontWeight: 500 }}>{p.name}</span><span style={{ fontSize: 11, opacity: 0.7, letterSpacing: 1 }}>{p.ratio}</span></button>); })}
@@ -483,10 +515,11 @@ export default function Lull() {
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 7, justifyContent: "center", paddingTop: 2 }}>
               {SOUND.map((o) => { const sel = scapeId === o.id; return (
-                <button key={o.id} className="lull-seg lull-btn" aria-pressed={sel} onClick={() => setScapeId(o.id)} style={{ padding: "7px 13px", borderRadius: 999, fontSize: 12.5, letterSpacing: 0.3, background: sel ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.04)", border: "1px solid " + (sel ? "rgba(255,255,255,0.28)" : "rgba(255,255,255,0.08)"), color: sel ? "#F8F5FF" : "rgba(243,239,255,0.55)", transition: "background .25s ease, color .25s ease, border-color .25s ease" }}>{o.name}</button>); })}
+                <button key={o.id} className="lull-seg lull-btn" aria-pressed={sel} onClick={() => setScapeId(o.id)} style={{ padding: "7px 13px", borderRadius: 999, fontSize: 12.5, letterSpacing: 0.3, background: sel ? wa(0.14) : wa(0.05), border: "1px solid " + (sel ? wa(0.3) : wa(0.1)), color: sel ? ink : inkA(0.55), transition: "background .25s ease, color .25s ease, border-color .25s ease" }}>{o.name}</button>); })}
             </div>
             {scapeId === "binaural" && (<p style={{ fontSize: 12, opacity: 0.55, textAlign: "center", margin: "2px 0 0", letterSpacing: 0.3 }}>Best with headphones</p>)}
             <button className="lull-btn lull-cta" onClick={startSession} style={{ ...glassBtn, marginTop: 4 }}>Begin</button>
+            {sessions.length > 0 && (<button className="lull-btn" onClick={() => setShowHistory(true)} style={{ marginTop: 2, padding: "7px 0", fontSize: 12.5, letterSpacing: 0.4, color: inkA(0.5), alignSelf: "center" }}>{(() => { const w = minutesSince(sessions, Date.now() - 7 * DAY_MS); return w > 0 ? `You’ve breathed ${w} min this week` : "Your breaths"; })()}</button>)}
           </div>
         )}
 
@@ -502,6 +535,7 @@ export default function Lull() {
             <div style={{ width: 96, height: 96, borderRadius: "50%", marginBottom: 14, backgroundImage: th.warmGrad, boxShadow: `0 0 60px ${th.ringTo}66` }} />
             <div style={{ fontSize: 28, fontWeight: 300, letterSpacing: 0.5 }}>That's it.</div>
             <p style={{ fontSize: 14, opacity: 0.6, margin: 0, maxWidth: 260 }}>You gave yourself {durationMin} {durationMin === 1 ? "minute" : "minutes"}. Carry it with you.</p>
+            {(() => { const w = minutesSince(sessions, Date.now() - 7 * DAY_MS); return w > 0 ? (<p style={{ fontSize: 12.5, opacity: 0.42, margin: "6px 0 0", letterSpacing: 0.3 }}>{`${w} minutes to breathe this week.`}</p>) : null; })()}
             <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%", maxWidth: 240, marginTop: 26 }}>
               <button className="lull-btn lull-cta" onClick={startSession} style={glassBtn}>Again</button>
               <button className="lull-btn" onClick={goHome} style={textBtn}>Done</button>
@@ -509,6 +543,35 @@ export default function Lull() {
           </div>
         )}
       </div>
+
+      {showHistory && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 60, background: night ? th.rootNight : (lightUI ? LIGHT_ROOT : th.rootDay), color: ink, display: "flex", flexDirection: "column", padding: "max(30px, calc(env(safe-area-inset-top) + 12px)) 26px calc(34px + env(safe-area-inset-bottom))", overflowY: "auto" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28 }}>
+            <span style={{ fontSize: 12, letterSpacing: 5, textTransform: "uppercase", fontWeight: 500, opacity: 0.6 }}>Your breaths</span>
+            <button className="lull-btn" aria-label="Close" onClick={() => setShowHistory(false)} style={{ padding: "6px 4px", opacity: 0.75, fontSize: 15 }}>Done</button>
+          </div>
+          {(() => {
+            const week = minutesSince(sessions, Date.now() - 7 * DAY_MS);
+            const all = minutesSince(sessions);
+            const recent = sessions.slice(-9).reverse();
+            return (<>
+              <div style={{ marginTop: 4 }}>
+                <div style={{ fontSize: 58, fontWeight: 200, letterSpacing: -1, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{week}<span style={{ fontSize: 20, fontWeight: 300, opacity: 0.55, marginLeft: 8 }}>min</span></div>
+                <div style={{ fontSize: 14, opacity: 0.55, marginTop: 8, maxWidth: 300 }}>{week > 0 ? "to breathe, this week" : "A quiet week — your breaths are here when you need them."}</div>
+              </div>
+              <div style={{ fontSize: 13, opacity: 0.42, marginTop: 18, letterSpacing: 0.2 }}>{all} minutes · {sessions.length} {sessions.length === 1 ? "breath" : "breaths"}, all-time</div>
+              <div style={{ marginTop: 24, display: "flex", flexDirection: "column" }}>
+                {recent.map((s, i) => { const d = new Date(s.t); const day = d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }); const pn = (PATTERNS[s.mode] && PATTERNS[s.mode][s.pattern] && PATTERNS[s.mode][s.pattern].name) || s.pattern; return (
+                  <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 2px", borderBottom: "1px solid " + wa(0.08) }}>
+                    <span style={{ fontSize: 14 }}>{day}</span>
+                    <span style={{ fontSize: 13, opacity: 0.55 }}>{s.mode === "sleep" ? "Sleep" : pn} · {s.min} min</span>
+                  </div>); })}
+              </div>
+              <div style={{ marginTop: "auto", paddingTop: 30, fontSize: 12.5, opacity: 0.4, textAlign: "center", letterSpacing: 0.3 }}>No streaks. No goals. Just the breaths you’ve taken.</div>
+            </>);
+          })()}
+        </div>
+      )}
 
       {sleepDone && (
         <div onClick={goHome} role="button" aria-label="Exit" style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "#050302", opacity: sleepVeil, transition: "opacity 3.4s ease", cursor: "pointer" }}>
