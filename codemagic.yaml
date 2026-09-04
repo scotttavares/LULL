@@ -13,6 +13,20 @@ workflows:
     instance_type: mac_mini_m2
     max_build_duration: 60
 
+    # Auto-start this workflow when commits land on main (e.g. a merged release PR),
+    # so a git push builds + uploads to App Store Connect without opening the UI.
+    # Requires Codemagic's GitHub webhook (added when the app is connected) and
+    # "Automatic build triggering" enabled for the app. To build only tagged
+    # releases instead, swap branch_patterns for: tag_patterns: [{pattern: 'v*', include: true}].
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+          source: true
+      cancel_previous_builds: true
+
     integrations:
       app_store_connect: "Codemagic Lull"   # must match your Codemagic integration name
 
