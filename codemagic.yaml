@@ -52,6 +52,14 @@ workflows:
       - name: Add iOS platform (if not committed) and sync
         script: |
           [ -d "ios/App" ] || npx cap add ios
+          # Raise the iOS deployment target 13 -> 15. App Store Connect warns (ITMS-90068)
+          # on <15 and will REQUIRE >=15 from Spring 2027. MinimumOSVersion in the built
+          # Info.plist derives from IPHONEOS_DEPLOYMENT_TARGET, so set it in the Xcode project;
+          # also bump the Podfile platform so pods build for 15. Do this BEFORE `cap sync`
+          # (which runs pod install). BSD sed (macOS) needs the empty '' after -i.
+          sed -i '' "s/IPHONEOS_DEPLOYMENT_TARGET = [0-9][0-9.]*;/IPHONEOS_DEPLOYMENT_TARGET = 15.0;/g" \
+            ios/App/App.xcodeproj/project.pbxproj || true
+          [ -f ios/App/Podfile ] && sed -i '' "s/platform :ios, '[0-9.][0-9.]*'/platform :ios, '15.0'/g" ios/App/Podfile || true
           npx cap sync ios
 
       - name: Generate app icon + splash from assets/
