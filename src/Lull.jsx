@@ -414,6 +414,12 @@ function createNatureNode(ctx, out, id, level) {
 }
 
 function createSoundscape(id, ctx, master, reverb, buffers, mode) {
+  // A saved mix bed: play several nature beds together, each at its own saved level.
+  if (id && typeof id === "object" && id.mix) {
+    const ns = [];
+    Object.entries(id.mix).forEach(([sid, lvl]) => { if (NATURE_AUDIO[sid] && lvl > 0) { const n = createNatureNode(ctx, master, sid, lvl); if (n) ns.push(n); } });
+    return { onPhase() {}, onStart() {}, onDone() {}, soften() { ns.forEach((n) => { try { n.soften(); } catch (e) {} }); }, stop(fade = 1.4) { ns.forEach((n) => { try { n.stop(fade); } catch (e) {} }); } };
+  }
   // Nature sounds play from a real looping recording via a media element (see createNatureNode).
   if (NATURE_AUDIO[id]) {
     const n = createNatureNode(ctx, master, id, 1);
@@ -570,9 +576,10 @@ export default function Lull() {
   const [patternId, setPatternId] = useState("calm");
   const [durationMin, setDurationMin] = useState(3);
   const [soundOn, setSoundOn] = useState(true);
-  const [scapeId, setScapeId] = useState(() => { try { const s = localStorage.getItem("lull.scape.v1"); return (s && SOUND_BY_ID[s]) ? s : "bowls"; } catch (e) { return "bowls"; } });
+  // A bed selection is a sound id ("rain") OR a saved mix ("mix:<presetId>").
+  const [scapeId, setScapeId] = useState(() => { try { const s = localStorage.getItem("lull.scape.v1"); return (s && (SOUND_BY_ID[s] || s.slice(0, 4) === "mix:")) ? s : "bowls"; } catch (e) { return "bowls"; } });
   // Sound-only sleep ("Sound only") keeps its own bed, so a sleep sound never changes your breathing sound. Defaults to white noise.
-  const [sleepScapeId, setSleepScapeId] = useState(() => { try { const s = localStorage.getItem("lull.sleepScape.v1"); return (s && SOUND_BY_ID[s]) ? s : "noise"; } catch (e) { return "noise"; } });
+  const [sleepScapeId, setSleepScapeId] = useState(() => { try { const s = localStorage.getItem("lull.sleepScape.v1"); return (s && (SOUND_BY_ID[s] || s.slice(0, 4) === "mix:")) ? s : "noise"; } catch (e) { return "noise"; } });
   const [light, setLight] = useState(false);
   const [sessions, setSessions] = useState(() => (typeof window !== "undefined" ? loadHist() : []));
   const [showHistory, setShowHistory] = useState(false);
@@ -583,6 +590,7 @@ export default function Lull() {
   const [mixPlaying, setMixPlaying] = useState(false);
   const mixBusRef = useRef(null); const mixNodesRef = useRef({}); const mixPlayingRef = useRef(false);
   const [mixPresets, setMixPresets] = useState(() => { try { return JSON.parse(localStorage.getItem("lull.mixPresets.v1")) || []; } catch (e) { return []; } }); // saved, named blends
+  const mixPresetsRef = useRef(mixPresets); // buildAmbience resolves a "mix:<id>" bed against this
   const [savingMix, setSavingMix] = useState(false); const [mixName, setMixName] = useState("");
   const [preCheck, setPreCheck] = useState(false);      // pre-session mood check-in overlay
   const [ready, setReady] = useState(false);            // "get ready" 3·2·1 pre-roll overlay
@@ -647,7 +655,12 @@ export default function Lull() {
   // The "Sound only" sleep mode edits its own bed (sleepScapeId); every other mode edits the breathing bed (scapeId).
   const editingSleepSound = mode === "sleep" && patternId === "noise";
   const activeSoundId = editingSleepSound ? sleepScapeId : scapeId;
-  const selectSound = (id) => { if (!soundOwned(id)) return; if (editingSleepSound) setSleepScapeId(id); else setScapeId(id); };
+  // A bed is either a single sound or a saved mix ("mix:<id>"). These resolve a selection to its name/chip.
+  const isMixSel = (sel) => typeof sel === "string" && sel.slice(0, 4) === "mix:";
+  const presetFor = (sel) => mixPresets.find((p) => "mix:" + p.id === sel);
+  const soundLabel = (sel) => { if (isMixSel(sel)) { const pr = presetFor(sel); return pr ? pr.name : "Mix"; } return (SOUND_BY_ID[sel] || SOUND[0]).name; };
+  const soundChipFor = (sel, size) => { if (isMixSel(sel)) return (<div style={{ width: size, height: size, borderRadius: "50%", flex: "0 0 auto", display: "flex", alignItems: "center", justifyContent: "center", background: "radial-gradient(circle at 50% 38%, #8ce0b055, #4fc4d022 60%, rgba(8,5,16,0.62) 100%)", boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.09), 0 2px 10px rgba(0,0,0,0.25)" }}><Waves size={Math.round(size * 0.5)} style={{ opacity: 0.85 }} /></div>); return soundChip(sel, size); };
+  const selectSound = (id) => { if (!isMixSel(id) && !soundOwned(id)) return; if (editingSleepSound) setSleepScapeId(id); else setScapeId(id); };
   // Unlock an orb pack, a sound pack, or everything (the bundle). Real charging awaits the receipt,
   // then calls these on success — same seam as unlockOrb.
   const unlockPack = (packId) => { const p = PACKS[packId]; if (!p) return; setOwnedOrbs((prev) => { const next = [...prev]; p.orbs.forEach((id) => { if (!next.includes(id)) next.push(id); }); return next; }); };
@@ -680,7 +693,9 @@ export default function Lull() {
   };
   const buildAmbience = () => {
     if (!audioRef.current || !nodesRef.current || scapeRef.current) return;
-    scapeRef.current = createSoundscape(sessionScapeRef.current || scapeIdRef.current, audioRef.current, nodesRef.current.master, nodesRef.current.reverb, { white: whiteRef.current, brown: brownRef.current }, modeRef.current);
+    let sel = sessionScapeRef.current || scapeIdRef.current; // a sound id or a "mix:<id>" reference
+    if (typeof sel === "string" && sel.slice(0, 4) === "mix:") { const pr = mixPresetsRef.current.find((p) => "mix:" + p.id === sel); sel = pr && pr.mix ? { mix: pr.mix } : "noise"; }
+    scapeRef.current = createSoundscape(sel, audioRef.current, nodesRef.current.master, nodesRef.current.reverb, { white: whiteRef.current, brown: brownRef.current }, modeRef.current);
   };
   const teardownAmbience = (fade = 1.2) => { try { if (scapeRef.current) scapeRef.current.stop(fade); } catch (e) {} scapeRef.current = null; };
   const breathAudio = (phase) => { try { if (scapeRef.current) scapeRef.current.onPhase(phase, modeRef.current); } catch (e) {} };
@@ -726,9 +741,9 @@ export default function Lull() {
   const suggestMixName = () => { const on = NATURE_IDS.filter((id) => (mix[id] || 0) > 0 && soundOwned(id)).sort((a, b) => (mix[b] || 0) - (mix[a] || 0)); const names = on.slice(0, 2).map((id) => (SOUND_BY_ID[id] || {}).name).filter(Boolean); return names.join(" & ") || "My mix"; };
   const beginSaveMix = () => { setMixName(suggestMixName()); setSavingMix(true); };
   const saveMixPreset = () => { const m = {}; NATURE_IDS.forEach((id) => { if ((mix[id] || 0) > 0 && soundOwned(id)) m[id] = mix[id]; }); if (!Object.keys(m).length) return; const name = (mixName.trim() || suggestMixName()).slice(0, 24); setMixPresets((prev) => [{ id: Date.now(), name, mix: m }, ...prev].slice(0, 12)); setSavingMix(false); setMixName(""); };
-  const deletePreset = (id) => setMixPresets((prev) => prev.filter((x) => x.id !== id));
+  const deletePreset = (id) => { const ref = "mix:" + id; if (scapeId === ref) setScapeId("bowls"); if (sleepScapeId === ref) setSleepScapeId("noise"); setMixPresets((prev) => prev.filter((x) => x.id !== id)); };
   const loadPreset = (p) => { setMix({ ...p.mix }); if (!mixPlayingRef.current) startMix(); };
-  useEffect(() => { try { localStorage.setItem("lull.mixPresets.v1", JSON.stringify(mixPresets)); } catch (e) {} }, [mixPresets]);
+  useEffect(() => { mixPresetsRef.current = mixPresets; try { localStorage.setItem("lull.mixPresets.v1", JSON.stringify(mixPresets)); } catch (e) {} }, [mixPresets]);
   useEffect(() => { try { localStorage.setItem("lull.mix.v1", JSON.stringify(mix)); } catch (e) {} if (mixPlayingRef.current) { applyMix(); updateMediaSession(); } }, [mix]);
   useEffect(() => { const h = () => { try { if (!document.hidden && audioRef.current && audioRef.current.state === "suspended" && (mixPlayingRef.current || scapeRef.current)) audioRef.current.resume(); } catch (e) {} }; document.addEventListener("visibilitychange", h); return () => document.removeEventListener("visibilitychange", h); }, []);
 
@@ -1187,16 +1202,11 @@ export default function Lull() {
                 </span>
                 <span aria-hidden="true" style={{ width: 1, height: 18, background: wa(0.18) }} />
                 <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  {soundChip(activeSoundId, 26)}
-                  <span style={{ fontSize: 13, fontWeight: 500, letterSpacing: 0.3 }}>{(SOUND_BY_ID[activeSoundId] || SOUND[0]).name}</span>
+                  {soundChipFor(activeSoundId, 26)}
+                  <span style={{ fontSize: 13, fontWeight: 500, letterSpacing: 0.3 }}>{soundLabel(activeSoundId)}</span>
                 </span>
                 <span style={{ fontSize: 13, opacity: 0.5, letterSpacing: 0.5, marginLeft: 1 }}>›</span>
               </button>
-              {mixPresets.map((pr) => (
-                <button key={pr.id} className="lull-btn" aria-label={"Play mix " + pr.name} onClick={() => loadPreset(pr)} style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 14px", borderRadius: 999, background: wa(0.05), border: "1px solid " + wa(0.14), color: ink, fontSize: 12.5, fontWeight: 500, letterSpacing: 0.2 }}>
-                  <Waves size={13} style={{ opacity: 0.55 }} />{pr.name}
-                </button>
-              ))}
             </div>
             {mixPlaying && (() => {
               const active = NATURE_IDS.filter((id) => (mix[id] || 0) > 0 && soundOwned(id));
@@ -1319,6 +1329,23 @@ export default function Lull() {
             })}
           </div>
           {soundOwned("binaural") && (<p style={{ fontSize: 12, opacity: 0.5, margin: "0 0 24px", letterSpacing: 0.2 }}>Binaural is best with headphones.</p>)}
+
+          {/* Your mixes — the blends you saved, ready to breathe or sleep with. Build new ones with the Sounds wave icon. */}
+          {mixPresets.length > 0 && (<>
+            <div style={{ fontSize: 11, letterSpacing: 3, textTransform: "uppercase", fontWeight: 600, opacity: 0.5, marginBottom: 13 }}>Your mixes</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(94px, 1fr))", gap: 11, marginBottom: 24 }}>
+              {mixPresets.map((pr) => {
+                const ref = "mix:" + pr.id; const sel = activeSoundId === ref;
+                return (
+                  <button key={pr.id} className="lull-btn" aria-pressed={sel} aria-label={"Use mix " + pr.name} onClick={() => selectSound(ref)} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 9, padding: "15px 8px 12px", borderRadius: 18, background: sel ? wa(0.09) : wa(0.03), border: "1px solid " + (sel ? wa(0.34) : wa(0.1)), boxShadow: sel ? "0 8px 22px -14px rgba(0,0,0,0.55)" : "none", transition: "border-color .2s ease, background .2s ease" }}>
+                    {soundChipFor(ref, 58)}
+                    <span style={{ fontSize: 13, fontWeight: 600, letterSpacing: 0.2, textAlign: "center", lineHeight: 1.15 }}>{pr.name}</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.7, textTransform: "uppercase", color: sel ? inkA(0.72) : inkA(0.36) }}>{sel ? "In use" : "Tap to use"}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </>)}
 
           {/* Offers — bundle hero + packs, each hidden once fully owned */}
           {!allOwned && (
