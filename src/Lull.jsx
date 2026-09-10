@@ -374,7 +374,7 @@ let _hushUrl = null; const hushUrl = () => (_hushUrl || (_hushUrl = makeHushData
 
 const NATURE_AUDIO = {
   rain: { url: "/assets/rain.mp3", gain: 24 },
-  ocean: { url: "/assets/ocean.wav", gain: 2.0 }, // calm waves, low-passed to remove the seagulls
+  ocean: { url: "/assets/ocean.wav", gain: 0.95 }, // calm wind-like wash, synthesized (no birds, no crashing)
   forest: { url: "/assets/forest.mp3", gain: 57 },
   // Fire's crackles are sharp transients (very high crest), so a plain gain loud enough to hear the
   // bed would clip the pops. `limit` inserts a limiter that tames the peaks so we can bring it up.
