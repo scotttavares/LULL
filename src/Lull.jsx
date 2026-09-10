@@ -108,7 +108,7 @@ const PATTERN_INFO = {
   sleep: {
     drift: "A long exhale to help you let go.",
     calm: "The classic wind down for sleep.",
-    noise: "Just sound to help you sleep.",
+    noise: "A steady sound for sleep.",
     custom: "Your own rhythm.",
   },
 };
