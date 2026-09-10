@@ -153,11 +153,12 @@ function pickReadyLine(mood) {
 const SOUND = [
   { id: "bowls", name: "Bowls", tag: "Singing bowls", glyph: "🎵", tint: "#9a86ff", img: "/assets/sound-bowls.webp", free: true },
   { id: "handpan", name: "Handpan", tag: "Hand drum", glyph: "🪘", tint: "#ffb27a", img: "/assets/sound-handpan.webp", free: true },
-  { id: "binaural", name: "Binaural", tag: "Deep tones", glyph: "🎧", tint: "#6fb2ff", free: true },
-  { id: "rain", name: "Rain", tag: "Steady rainfall", glyph: "🌧️", tint: "#7fa8d8", pack: "nature" },
-  { id: "ocean", name: "Ocean", tag: "Rolling waves", glyph: "🌊", tint: "#4fc4d0", pack: "nature" },
-  { id: "forest", name: "Forest", tag: "Wind & birdsong", glyph: "🌲", tint: "#79c88a", pack: "nature" },
-  { id: "fire", name: "Fire", tag: "Crackling hearth", glyph: "🔥", tint: "#ff8a5c", pack: "nature" },
+  { id: "binaural", name: "Binaural", tag: "Deep tones", glyph: "🎧", tint: "#6fb2ff", free: true, bed: true },
+  { id: "noise", name: "White noise", tag: "Steady hush", glyph: "🌫️", tint: "#aebdd6", free: true, bed: true },
+  { id: "rain", name: "Rain", tag: "Steady rainfall", glyph: "🌧️", tint: "#7fa8d8", pack: "nature", bed: true },
+  { id: "ocean", name: "Ocean", tag: "Rolling waves", glyph: "🌊", tint: "#4fc4d0", pack: "nature", bed: true },
+  { id: "forest", name: "Forest", tag: "Wind & birdsong", glyph: "🌲", tint: "#79c88a", pack: "nature", bed: true },
+  { id: "fire", name: "Fire", tag: "Crackling hearth", glyph: "🔥", tint: "#ff8a5c", pack: "nature", bed: true },
 ];
 const SOUND_BY_ID = Object.fromEntries(SOUND.map((s) => [s.id, s]));
 function soundChip(id, size) {
@@ -381,7 +382,7 @@ const NATURE_AUDIO = {
   // White noise: generated lazily on first use (url filled in by createNatureNode via hushUrl()).
   noise: { url: "", gain: 1.0 },
 };
-const NATURE_IDS = SOUND.filter((s) => NATURE_AUDIO[s.id]).map((s) => s.id); // nature bed ids, in registry order
+const NATURE_IDS = SOUND.filter((s) => NATURE_AUDIO[s.id] && s.id !== "noise").map((s) => s.id); // nature bed ids for the mixer (white noise is a single-sound pick, not a blend layer)
 
 // Build one looping nature bed: <audio> → gain → (optional limiter) → out. `level` (0..1) scales the
 // file's baked gain; `setLevel` adjusts it live. Shared by breathing sessions and the standalone mixer.
@@ -549,7 +550,7 @@ export default function Lull() {
       sleep: {
         drift: { name: "Drift", ratio: "4 · 8", phases: [{ key: "inhale", label: "Breathe in", dur: 4, scale: HI, tone: "cool" }, { key: "exhale", label: "Let go", dur: 8, scale: LO, tone: "warm" }] },
         calm: { name: "Calm", ratio: "4 · 7 · 8", phases: [{ key: "inhale", label: "Breathe in", dur: 4, scale: HI, tone: "cool" }, { key: "hold", label: "Hold", dur: 7, scale: HI, tone: "cool" }, { key: "exhale", label: "Let go", dur: 8, scale: LO, tone: "warm" }] },
-        noise: { name: "White noise", ratio: "Just sound", soundOnly: true, sound: "noise", phases: [{ key: "hold", label: "", dur: 6, scale: LO, tone: "cool" }] },
+        noise: { name: "Sound only", ratio: "Any sound", soundOnly: true, phases: [{ key: "hold", label: "", dur: 6, scale: LO, tone: "cool" }] },
       },
     };
     if (customPat) {
@@ -569,7 +570,9 @@ export default function Lull() {
   const [patternId, setPatternId] = useState("calm");
   const [durationMin, setDurationMin] = useState(3);
   const [soundOn, setSoundOn] = useState(true);
-  const [scapeId, setScapeId] = useState("bowls");
+  const [scapeId, setScapeId] = useState(() => { try { const s = localStorage.getItem("lull.scape.v1"); return (s && SOUND_BY_ID[s]) ? s : "bowls"; } catch (e) { return "bowls"; } });
+  // Sound-only sleep ("Sound only") keeps its own bed, so a sleep sound never changes your breathing sound. Defaults to white noise.
+  const [sleepScapeId, setSleepScapeId] = useState(() => { try { const s = localStorage.getItem("lull.sleepScape.v1"); return (s && SOUND_BY_ID[s]) ? s : "noise"; } catch (e) { return "noise"; } });
   const [light, setLight] = useState(false);
   const [sessions, setSessions] = useState(() => (typeof window !== "undefined" ? loadHist() : []));
   const [showHistory, setShowHistory] = useState(false);
@@ -598,7 +601,7 @@ export default function Lull() {
   const phasesRef = useRef([]); const idxRef = useRef(0); const elapsedRef = useRef(0); const targetRef = useRef(0);
   const pausedRef = useRef(false); const phaseTimeout = useRef(null); const tickRef = useRef(null);
   const soundRef = useRef(soundOn); const modeRef = useRef(mode); const patternIdRef = useRef(patternId);
-  const audioRef = useRef(null); const nodesRef = useRef(null); const scapeRef = useRef(null); const brownRef = useRef(null); const whiteRef = useRef(null); const scapeIdRef = useRef("bowls");
+  const audioRef = useRef(null); const nodesRef = useRef(null); const scapeRef = useRef(null); const brownRef = useRef(null); const whiteRef = useRef(null); const scapeIdRef = useRef("bowls"); const sleepScapeIdRef = useRef("noise");
   const soundOnlyRef = useRef(false); const sessionScapeRef = useRef(null); // sound-only sleep: no breathing, a forced bed
   const particleRef = useRef(null);
   const moodBeforeRef = useRef(null); const pendingStartRef = useRef(null); // carry the pre-session mood + intent through the check-in
@@ -624,7 +627,8 @@ export default function Lull() {
   useEffect(() => { soundRef.current = soundOn; }, [soundOn]);
   useEffect(() => { modeRef.current = mode; }, [mode]);
   useEffect(() => { patternIdRef.current = patternId; }, [patternId]);
-  useEffect(() => { scapeIdRef.current = scapeId; }, [scapeId]);
+  useEffect(() => { scapeIdRef.current = scapeId; try { localStorage.setItem("lull.scape.v1", scapeId); } catch (e) {} }, [scapeId]);
+  useEffect(() => { sleepScapeIdRef.current = sleepScapeId; try { localStorage.setItem("lull.sleepScape.v1", sleepScapeId); } catch (e) {} }, [sleepScapeId]);
   useEffect(() => { try { localStorage.setItem(ORB_KEY, orbId); } catch (e) {} }, [orbId]);
   useEffect(() => { try { localStorage.setItem(OWNED_KEY, JSON.stringify(ownedOrbs)); } catch (e) {} }, [ownedOrbs]);
   useEffect(() => { try { localStorage.setItem(SOUNDS_OWNED_KEY, JSON.stringify(ownedSounds)); } catch (e) {} }, [ownedSounds]);
@@ -640,7 +644,10 @@ export default function Lull() {
   const allOrbsOwned = ORB_ORDER.every(orbOwned);
   const allSoundsOwned = SOUND.every((s) => soundOwned(s.id));
   const allOwned = allOrbsOwned && allSoundsOwned;   // everything (orbs + sounds) — gates the bundle & the "Unlock more" section
-  const selectSound = (id) => { if (soundOwned(id)) setScapeId(id); };
+  // The "Sound only" sleep mode edits its own bed (sleepScapeId); every other mode edits the breathing bed (scapeId).
+  const editingSleepSound = mode === "sleep" && patternId === "noise";
+  const activeSoundId = editingSleepSound ? sleepScapeId : scapeId;
+  const selectSound = (id) => { if (!soundOwned(id)) return; if (editingSleepSound) setSleepScapeId(id); else setScapeId(id); };
   // Unlock an orb pack, a sound pack, or everything (the bundle). Real charging awaits the receipt,
   // then calls these on success — same seam as unlockOrb.
   const unlockPack = (packId) => { const p = PACKS[packId]; if (!p) return; setOwnedOrbs((prev) => { const next = [...prev]; p.orbs.forEach((id) => { if (!next.includes(id)) next.push(id); }); return next; }); };
@@ -764,7 +771,7 @@ export default function Lull() {
     if (mixPlayingRef.current) stopMix(); // a session's bed replaces the standalone ambient mix
     if (pid !== patternId) { setPatternId(pid); patternIdRef.current = pid; }
     phasesRef.current = p.phases; idxRef.current = 0; elapsedRef.current = 0;
-    soundOnlyRef.current = !!p.soundOnly; sessionScapeRef.current = p.sound || null;
+    soundOnlyRef.current = !!p.soundOnly; sessionScapeRef.current = p.soundOnly ? sleepScapeIdRef.current : (p.sound || null);
     targetRef.current = (typeof durSecOverride === "number" && durSecOverride > 0) ? durSecOverride : durationMin * 60;
     pausedRef.current = false; setPaused(false); setRemaining(targetRef.current); setProgress(0); setScreen("active");
     // Unlock + start the audio bed inside the tap gesture (iOS won't start media outside a gesture); it
@@ -1180,8 +1187,8 @@ export default function Lull() {
                 </span>
                 <span aria-hidden="true" style={{ width: 1, height: 18, background: wa(0.18) }} />
                 <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  {soundChip(scapeId, 26)}
-                  <span style={{ fontSize: 13, fontWeight: 500, letterSpacing: 0.3 }}>{(SOUND_BY_ID[scapeId] || SOUND[0]).name}</span>
+                  {soundChip(activeSoundId, 26)}
+                  <span style={{ fontSize: 13, fontWeight: 500, letterSpacing: 0.3 }}>{(SOUND_BY_ID[activeSoundId] || SOUND[0]).name}</span>
                 </span>
                 <span style={{ fontSize: 13, opacity: 0.5, letterSpacing: 0.5, marginLeft: 1 }}>›</span>
               </button>
@@ -1229,9 +1236,9 @@ export default function Lull() {
                   {isSleep && (() => {
                     const has = sleepCustomMin != null; const sel = has && durationMin === sleepCustomMin && !durs.includes(sleepCustomMin);
                     const lbl = has ? fmtDur(sleepCustomMin) : null;
-                    return (<button key="sleep-custom" className="lull-seg lull-btn" aria-label={has ? `Custom sleep time ${lbl.big} ${lbl.unit}` : "Set a custom sleep time"} aria-pressed={sel} onClick={() => { if (has && !sel) { setDurationMin(sleepCustomMin); setRemaining(sleepCustomMin * 60); } else { openSleepTime(); } }} style={seg(sel)}>
-                      {has ? (<><span style={{ fontSize: 16, fontWeight: 500 }}>{lbl.big}</span><span style={{ fontSize: 11, opacity: 0.6, letterSpacing: 1 }}>{lbl.unit}</span></>)
-                           : (<><span style={{ fontSize: 17, fontWeight: 300, lineHeight: 1.1 }}>＋</span><span style={{ fontSize: 10.5, opacity: 0.6, letterSpacing: 0.5 }}>hrs</span></>)}
+                    return (<button key="sleep-custom" className="lull-seg lull-btn" aria-label={has ? `Your custom sleep time, ${lbl.big} ${lbl.unit}. Tap again to change it.` : "Make your own sleep time"} aria-pressed={sel} onClick={() => { if (has && !sel) { setDurationMin(sleepCustomMin); setRemaining(sleepCustomMin * 60); } else { openSleepTime(); } }} style={{ ...seg(sel), position: "relative", border: "1px dashed " + wa(sel ? 0.44 : 0.3) }}>
+                      {has ? (<><span aria-hidden style={{ position: "absolute", top: 4, right: 5, fontSize: 9, opacity: 0.7 }}>✎</span><span style={{ fontSize: 16, fontWeight: 500 }}>{lbl.big}</span><span style={{ fontSize: 9.5, opacity: 0.6, letterSpacing: 0.5 }}>{lbl.unit} · yours</span></>)
+                           : (<><span style={{ fontSize: 17, fontWeight: 300, lineHeight: 1.1 }}>＋</span><span style={{ fontSize: 10.5, opacity: 0.6, letterSpacing: 0.5 }}>yours</span></>)}
                     </button>);
                   })()}
                 </div>
@@ -1300,8 +1307,8 @@ export default function Lull() {
           {/* Your sounds — free + everything you own, tap to breathe with it */}
           <div style={{ fontSize: 11, letterSpacing: 3, textTransform: "uppercase", fontWeight: 600, opacity: 0.5, marginBottom: 13 }}>Your sounds</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(94px, 1fr))", gap: 11, marginBottom: 16 }}>
-            {SOUND.filter((s) => soundOwned(s.id)).map((s) => {
-              const sel = scapeId === s.id;
+            {SOUND.filter((s) => soundOwned(s.id) && (!editingSleepSound || s.bed)).map((s) => {
+              const sel = activeSoundId === s.id;
               return (
                 <button key={s.id} className="lull-btn" aria-pressed={sel} onClick={() => selectSound(s.id)} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 9, padding: "15px 8px 12px", borderRadius: 18, background: sel ? wa(0.09) : wa(0.03), border: "1px solid " + (sel ? wa(0.34) : wa(0.1)), boxShadow: sel ? "0 8px 22px -14px rgba(0,0,0,0.55)" : "none", transition: "border-color .2s ease, background .2s ease" }}>
                   {soundChip(s.id, 58)}
