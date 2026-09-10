@@ -108,10 +108,46 @@ const PATTERN_INFO = {
   sleep: {
     drift: "A long exhale to help you let go.",
     calm: "The classic wind down for sleep.",
-    noise: "Steady sound, no breathing to follow.",
+    noise: "Just sound to help you sleep.",
     custom: "Your own rhythm.",
   },
 };
+// "Get ready" pre-roll lines, chosen by how the person answered the pre-session calm scale
+// (Tense 1 .. Calm 5, or null when skipped). One is picked at random each time. Dash-free, one line.
+const READY_LINES = {
+  tense: [
+    "You're safe here. Let's slow it all down.",
+    "Unclench your jaw. Drop your shoulders.",
+    "Nothing to solve right now. Only breathe.",
+    "Let's set down what you're holding.",
+    "One slow breath, then another.",
+  ],
+  mid: [
+    "A few quiet minutes, just for you.",
+    "Arrive here. The rest can wait.",
+    "Let's find a slower rhythm together.",
+    "Settle in. There's no rush.",
+    "Soften your gaze and begin.",
+  ],
+  calm: [
+    "Let's deepen the calm you brought.",
+    "Stay a while in this stillness.",
+    "Carry this quiet a little further.",
+    "You're already here. Let's go deeper.",
+    "Savor this steadiness.",
+  ],
+  general: [
+    "Get comfortable. Let's breathe.",
+    "A minute to breathe, just for you.",
+    "Arrive here. The rest can wait.",
+    "Soften, settle, and begin.",
+    "Let's slow down together.",
+  ],
+};
+function pickReadyLine(mood) {
+  const b = (typeof mood !== "number") ? READY_LINES.general : mood <= 2 ? READY_LINES.tense : mood >= 4 ? READY_LINES.calm : READY_LINES.mid;
+  return b[Math.floor(Math.random() * b.length)];
+}
 // Soundscapes: three ship free; others unlock via a sound pack (or the Everything bundle).
 // Each is generated procedurally in createSoundscape — no audio files. `pack` names the pack it belongs to.
 const SOUND = [
@@ -546,6 +582,9 @@ export default function Lull() {
   const [mixPresets, setMixPresets] = useState(() => { try { return JSON.parse(localStorage.getItem("lull.mixPresets.v1")) || []; } catch (e) { return []; } }); // saved, named blends
   const [savingMix, setSavingMix] = useState(false); const [mixName, setMixName] = useState("");
   const [preCheck, setPreCheck] = useState(false);      // pre-session mood check-in overlay
+  const [ready, setReady] = useState(false);            // "get ready" 3·2·1 pre-roll overlay
+  const [readyN, setReadyN] = useState(3);              // countdown number; 0 shows "Breathe"
+  const [readySaying, setReadySaying] = useState("");   // mood-tailored line shown during the pre-roll
   const [moodAfter, setMoodAfter] = useState(null);     // done-screen mood → reveals the calm lift
 
   const [phaseLabel, setPhaseLabel] = useState("Breathe in");
@@ -563,6 +602,7 @@ export default function Lull() {
   const soundOnlyRef = useRef(false); const sessionScapeRef = useRef(null); // sound-only sleep: no breathing, a forced bed
   const particleRef = useRef(null);
   const moodBeforeRef = useRef(null); const pendingStartRef = useRef(null); // carry the pre-session mood + intent through the check-in
+  const readyTimers = useRef([]); // pending "get ready" countdown timeouts
   // Drive the particle-sphere canvas while a particle orb is selected; clean up on change/unmount.
   useEffect(() => {
     const orb = ORBS[orbId] || ORBS.aurora;
@@ -612,6 +652,7 @@ export default function Lull() {
   const clearTimers = useCallback(() => {
     if (phaseTimeout.current) clearTimeout(phaseTimeout.current);
     if (tickRef.current) clearInterval(tickRef.current);
+    readyTimers.current.forEach(clearTimeout); readyTimers.current = [];
     phaseTimeout.current = null; tickRef.current = null;
   }, []);
 
@@ -715,7 +756,7 @@ export default function Lull() {
     }, 200);
   }, []);
 
-  const startSession = (patOverride, durSecOverride) => {
+  const startSession = (patOverride, durSecOverride, preroll) => {
     // patOverride is a string only when called programmatically (e.g. the SOS button); as an onClick
     // handler the first arg is the event, which we ignore and fall back to the chosen pattern.
     const pid = (typeof patOverride === "string" && PATTERNS[mode][patOverride]) ? patOverride : patternId;
@@ -726,16 +767,38 @@ export default function Lull() {
     soundOnlyRef.current = !!p.soundOnly; sessionScapeRef.current = p.sound || null;
     targetRef.current = (typeof durSecOverride === "number" && durSecOverride > 0) ? durSecOverride : durationMin * 60;
     pausedRef.current = false; setPaused(false); setRemaining(targetRef.current); setProgress(0); setScreen("active");
-    ensureAudio(); if (soundRef.current) { buildAmbience(); if (!p.soundOnly) bowl("start"); }
+    // Unlock + start the audio bed inside the tap gesture (iOS won't start media outside a gesture); it
+    // fades in gently under the "get ready" pre-roll. Breathing phases + the countdown clock wait for
+    // beginBreathing() so the 3·2·1 isn't taken out of the session.
+    ensureAudio(); if (soundRef.current) buildAmbience();
+    if (preroll) { setPhaseLabel(""); setTone("cool"); setOrb({ scale: prefersReduced ? 0.95 : 0.9, dur: 1.4, ease: "ease" }); return; }
+    beginBreathing();
+  };
+  const beginBreathing = () => {
+    const p = PATTERNS[modeRef.current] && PATTERNS[modeRef.current][patternIdRef.current]; if (!p) return;
     startTick();
+    if (soundRef.current && !p.soundOnly) bowl("start");
     if (p.soundOnly) {
       setPhaseLabel(""); setTone("cool"); setOrb({ scale: 0.88, dur: 4, ease: "ease" });
       try { if ("mediaSession" in navigator) { navigator.mediaSession.metadata = new window.MediaMetadata({ title: p.name, artist: "Lull", album: "Sleep", artwork: [{ src: "/icon-512.png", sizes: "512x512", type: "image/png" }] }); navigator.mediaSession.playbackState = "playing"; navigator.mediaSession.setActionHandler("pause", () => pauseSession()); navigator.mediaSession.setActionHandler("play", () => resumeSession()); } } catch (e) {}
     } else runPhase();
   };
+  // "Get ready" pre-roll: 3 · 2 · 1 · Breathe, with a line chosen by the pre-session calm scale. The bed
+  // starts now (see startSession); breathing begins when the count lands. Only breathe/meditate reach here.
+  const beginReady = (mood, pat, dur) => {
+    readyTimers.current.forEach(clearTimeout); readyTimers.current = [];
+    setReadySaying(pickReadyLine(mood)); setReadyN(3); setReady(true);
+    startSession(pat, dur, true);
+    const step = prefersReduced ? 820 : 950;
+    readyTimers.current.push(setTimeout(() => setReadyN(2), step));
+    readyTimers.current.push(setTimeout(() => setReadyN(1), step * 2));
+    readyTimers.current.push(setTimeout(() => setReadyN(0), step * 3)); // 0 → "Breathe"
+    readyTimers.current.push(setTimeout(() => { setReady(false); beginBreathing(); }, step * 3 + 850));
+  };
+  const skipReady = () => { readyTimers.current.forEach(clearTimeout); readyTimers.current = []; setReady(false); beginBreathing(); };
   const pauseSession = () => { pausedRef.current = true; setPaused(true); if (phaseTimeout.current) clearTimeout(phaseTimeout.current); setPhaseLabel("Paused"); setOrb({ scale: prefersReduced ? 0.95 : 0.92, dur: 0.8, ease: "ease" }); softenAmbience(); };
   const resumeSession = () => { pausedRef.current = false; setPaused(false); ensureAudio(); if (soundRef.current && !scapeRef.current) buildAmbience(); if (soundOnlyRef.current) { setPhaseLabel(""); setOrb({ scale: 0.88, dur: 3, ease: "ease" }); } else runPhase(); };
-  const goHome = () => { clearTimers(); pausedRef.current = false; setPaused(false); soundOnlyRef.current = false; sessionScapeRef.current = null; teardownAmbience(0.9); setScreen("home"); setOrb({ scale: LO, dur: 1, ease: "ease" }); setRemaining(durationMin * 60); setProgress(0); try { updateMediaSession(); } catch (e) {} };
+  const goHome = () => { clearTimers(); setReady(false); pausedRef.current = false; setPaused(false); soundOnlyRef.current = false; sessionScapeRef.current = null; teardownAmbience(0.9); setScreen("home"); setOrb({ scale: LO, dur: 1, ease: "ease" }); setRemaining(durationMin * 60); setProgress(0); try { updateMediaSession(); } catch (e) {} };
   function finishSession() { clearTimers(); pausedRef.current = false; setPaused(false); soundOnlyRef.current = false; sessionScapeRef.current = null; if (modeRef.current !== "sleep") bowl("done"); teardownAmbience(modeRef.current === "sleep" ? 3.4 : 1.6); setMoodAfter(null); try { const entry = { t: Date.now(), mode: modeRef.current, pattern: patternIdRef.current, min: Math.max(1, Math.round(targetRef.current / 60)), moodBefore: (typeof moodBeforeRef.current === "number" ? moodBeforeRef.current : null), moodAfter: null }; setSessions((prev) => { const next = [...prev, entry]; saveHist(next); return next; }); } catch (e) {} setScreen("done"); }
   // A gentle, skippable calm check before breathing → sets moodBefore, then starts. Sleep and SOS
   // (sos:true patterns, e.g. Reset) skip it entirely — no friction when someone needs to calm down now.
@@ -749,7 +812,7 @@ export default function Lull() {
   const startAfterCheckin = (mood) => {
     moodBeforeRef.current = (typeof mood === "number") ? mood : null; setPreCheck(false);
     const j = pendingStartRef.current || {}; pendingStartRef.current = null;
-    startSession(j.pat, j.dur);
+    beginReady(mood, j.pat, j.dur);
   };
   // Post-session tap patches the just-created entry with moodAfter and reveals the lift.
   const recordMoodAfter = (mood) => { setMoodAfter(mood); setSessions((prev) => { if (!prev.length) return prev; const next = prev.slice(); next[next.length - 1] = { ...next[next.length - 1], moodAfter: mood }; saveHist(next); return next; }); };
@@ -759,7 +822,7 @@ export default function Lull() {
   const downloadExport = () => { try { const blob = new Blob([exportJson()], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "lull-breaths.json"; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000); } catch (e) {} };
   const copyExport = async () => { let ok = false; try { await navigator.clipboard.writeText(exportJson()); ok = true; } catch (e) {} if (!ok) { try { const ta = document.getElementById("lull-export-ta"); if (ta) { ta.focus(); ta.select(); ok = document.execCommand("copy"); } } catch (e) {} } setCopied(ok); if (ok) setTimeout(() => setCopied(false), 2200); };
   const eraseData = () => { if (typeof window !== "undefined" && !window.confirm("Erase all your breaths and mood ratings? This stays on your device and can't be undone.")) return; try { localStorage.removeItem(HIST_KEY); } catch (e) {} setSessions([]); setShowHistory(false); };
-  const switchMode = (m) => { if (m === mode) return; clearTimers(); teardownAmbience(0.4); setMode(m); setScreen("home"); setPatternId(DEFAULT_PATTERN[m]); setDurationMin(DEFAULT_DUR[m]); setRemaining(DEFAULT_DUR[m] * 60); setProgress(0); setTone("cool"); setOrb({ scale: LO, dur: 1, ease: "ease" }); };
+  const switchMode = (m) => { if (m === mode) return; clearTimers(); setReady(false); teardownAmbience(0.4); setMode(m); setScreen("home"); setPatternId(DEFAULT_PATTERN[m]); setDurationMin(DEFAULT_DUR[m]); setRemaining(DEFAULT_DUR[m] * 60); setProgress(0); setTone("cool"); setOrb({ scale: LO, dur: 1, ease: "ease" }); };
   const toggleSound = () => {
     ensureAudio(); const next = !soundOn; setSoundOn(next); soundRef.current = next;
     if (nodesRef.current && audioRef.current) { const t = audioRef.current.currentTime; const g = nodesRef.current.master.gain; g.cancelScheduledValues(t); g.setValueAtTime(Math.max(g.value, 0.0001), t); g.linearRampToValueAtTime(next ? 0.45 : 0.0001, t + 0.6); }
@@ -896,7 +959,9 @@ export default function Lull() {
     .lull-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 18px; height: 18px; margin-top: -7px; border-radius: 50%; background: #efeaff; box-shadow: 0 1px 5px rgba(0,0,0,0.5); }
     .lull-range::-moz-range-thumb { width: 18px; height: 18px; border: none; border-radius: 50%; background: #efeaff; box-shadow: 0 1px 5px rgba(0,0,0,0.5); }
     .lull-range:focus-visible { outline: 2px solid rgba(255,255,255,0.7); outline-offset: 4px; border-radius: 999px; }
-    @media (prefers-reduced-motion: reduce) { .orb-idle,.amb1,.amb2 { animation: none !important; } }
+    @keyframes readyPop { 0% { opacity: 0; transform: scale(0.6); } 30% { opacity: 1; } 100% { opacity: 0.9; transform: scale(1); } }
+    .ready-count { animation: readyPop 0.95s cubic-bezier(.2,.8,.2,1) both; }
+    @media (prefers-reduced-motion: reduce) { .orb-idle,.amb1,.amb2 { animation: none !important; } .ready-count { animation: none !important; opacity: 1 !important; } }
   `;
   const segWrap = { display: "flex", flexWrap: "wrap", gap: 8, width: "100%", background: wa(0.05), border: "1px solid " + wa(0.1), borderRadius: 18, padding: 6 };
   const seg = (sel) => ({ flex: "1 1 28%", padding: "12px 8px", borderRadius: 13, border: "1px solid transparent", background: sel ? wa(0.12) : "transparent", color: sel ? ink : inkA(0.5), transition: "background .35s ease, color .35s ease", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 });
@@ -1389,6 +1454,15 @@ export default function Lull() {
           <p style={{ fontSize: 13.5, opacity: 0.5, margin: "-6px 0 4px", maxWidth: "30ch", lineHeight: 1.5 }}>One tap, and we’ll check in again after. Just for you, stays on this device.</p>
           {moodScale(null, startAfterCheckin)}
           <button className="lull-btn" onClick={() => startAfterCheckin(null)} style={{ ...textBtn, marginTop: 8 }}>Skip</button>
+        </div>
+      )}
+
+      {ready && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 66, backgroundColor: groundSolid, backgroundImage: groundBg, color: ink, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", gap: 16, padding: "max(30px, calc(env(safe-area-inset-top) + 12px)) 30px calc(34px + env(safe-area-inset-bottom))" }}>
+          <div style={{ fontSize: 11, letterSpacing: 3, textTransform: "uppercase", fontWeight: 600, opacity: 0.5 }}>Get ready</div>
+          <div key={readyN} className="ready-count" style={{ fontVariantNumeric: "tabular-nums", fontWeight: readyN > 0 ? 200 : 300, fontSize: readyN > 0 ? 96 : 42, letterSpacing: readyN > 0 ? -2 : 1, lineHeight: 1, minHeight: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>{readyN > 0 ? readyN : "Breathe"}</div>
+          <p style={{ fontSize: 15, opacity: 0.62, margin: 0, maxWidth: "26ch", lineHeight: 1.5, minHeight: 44 }}>{readySaying}</p>
+          <button className="lull-btn" onClick={skipReady} style={{ ...textBtn, marginTop: 6 }}>Begin now</button>
         </div>
       )}
 
