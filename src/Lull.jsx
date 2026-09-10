@@ -592,6 +592,7 @@ export default function Lull() {
   const [mixPresets, setMixPresets] = useState(() => { try { return JSON.parse(localStorage.getItem("lull.mixPresets.v1")) || []; } catch (e) { return []; } }); // saved, named blends
   const mixPresetsRef = useRef(mixPresets); // buildAmbience resolves a "mix:<id>" bed against this
   const [savingMix, setSavingMix] = useState(false); const [mixName, setMixName] = useState("");
+  const [editingPresetId, setEditingPresetId] = useState(null); // when set, the mixer edits this saved mix in place
   const [preCheck, setPreCheck] = useState(false);      // pre-session mood check-in overlay
   const [ready, setReady] = useState(false);            // "get ready" 3·2·1 pre-roll overlay
   const [readyN, setReadyN] = useState(3);              // countdown number; 0 shows "Breathe"
@@ -740,7 +741,19 @@ export default function Lull() {
   // Saved, named blends. suggestMixName offers the loudest one or two sounds as a default name.
   const suggestMixName = () => { const on = NATURE_IDS.filter((id) => (mix[id] || 0) > 0 && soundOwned(id)).sort((a, b) => (mix[b] || 0) - (mix[a] || 0)); const names = on.slice(0, 2).map((id) => (SOUND_BY_ID[id] || {}).name).filter(Boolean); return names.join(" & ") || "My mix"; };
   const beginSaveMix = () => { setMixName(suggestMixName()); setSavingMix(true); };
-  const saveMixPreset = () => { const m = {}; NATURE_IDS.forEach((id) => { if ((mix[id] || 0) > 0 && soundOwned(id)) m[id] = mix[id]; }); if (!Object.keys(m).length) return; const name = (mixName.trim() || suggestMixName()).slice(0, 24); setMixPresets((prev) => [{ id: Date.now(), name, mix: m }, ...prev].slice(0, 12)); setSavingMix(false); setMixName(""); };
+  const saveMixPreset = () => {
+    const m = {}; NATURE_IDS.forEach((id) => { if ((mix[id] || 0) > 0 && soundOwned(id)) m[id] = mix[id]; });
+    if (!Object.keys(m).length) return;
+    const name = (mixName.trim() || suggestMixName()).slice(0, 24);
+    setMixPresets((prev) => (editingPresetId != null && prev.some((x) => x.id === editingPresetId))
+      ? prev.map((x) => (x.id === editingPresetId ? { ...x, name, mix: m } : x))   // update the mix you're editing, in place
+      : [{ id: Date.now(), name, mix: m }, ...prev].slice(0, 12));                  // otherwise save a new one
+    setSavingMix(false); setMixName(""); setEditingPresetId(null);
+  };
+  // Open the mixer to build a brand-new blend, or to edit an existing one in place. Both are reachable from the store.
+  const newMix = () => { setEditingPresetId(null); setSavingMix(false); setMixName(""); try { stopMix(); } catch (e) {} setMix({}); setOrbStoreOpen(false); setMixerOpen(true); };
+  const editMix = (pr) => { setEditingPresetId(pr.id); setMixName(pr.name); setMix({ ...pr.mix }); setSavingMix(true); setOrbStoreOpen(false); setMixerOpen(true); if (!mixPlayingRef.current) startMix(); };
+  const closeMixer = () => { setMixerOpen(false); setSavingMix(false); setEditingPresetId(null); };
   const deletePreset = (id) => { const ref = "mix:" + id; if (scapeId === ref) setScapeId("bowls"); if (sleepScapeId === ref) setSleepScapeId("noise"); setMixPresets((prev) => prev.filter((x) => x.id !== id)); };
   const loadPreset = (p) => { setMix({ ...p.mix }); if (!mixPlayingRef.current) startMix(); };
   useEffect(() => { mixPresetsRef.current = mixPresets; try { localStorage.setItem("lull.mixPresets.v1", JSON.stringify(mixPresets)); } catch (e) {} }, [mixPresets]);
@@ -1060,7 +1073,7 @@ export default function Lull() {
           <span style={{ fontSize: 14, letterSpacing: 6, textTransform: "uppercase", fontWeight: 500, opacity: 0.82, paddingLeft: 6 }}>Lull</span>
           {false && (<button className="lull-btn" aria-label="theme" onClick={() => setLight((v) => !v)} style={{ position: "absolute", left: 0, padding: 8, opacity: 0.7 }}>{lightUI ? <Moon size={19} /> : <Sun size={19} />}</button>)}
           <div style={{ position: "absolute", right: 0, display: "flex", alignItems: "center", gap: 2 }}>
-            {screen === "home" && (<button className="lull-btn" aria-label="Ambient sounds" onClick={() => setMixerOpen(true)} style={{ padding: 8, opacity: mixPlaying ? 1 : 0.7, display: "flex", color: mixPlaying ? "#8ce0b0" : undefined }}><Waves size={19} /></button>)}
+            {screen === "home" && (<button className="lull-btn" aria-label="Ambient sounds" onClick={() => { setEditingPresetId(null); setSavingMix(false); setMixerOpen(true); }} style={{ padding: 8, opacity: mixPlaying ? 1 : 0.7, display: "flex", color: mixPlaying ? "#8ce0b0" : undefined }}><Waves size={19} /></button>)}
             {screen === "home" && (<button className="lull-btn" aria-label="Your breaths" onClick={() => setShowHistory(true)} style={{ padding: 8, opacity: 0.7, display: "flex" }}><CalendarDays size={19} /></button>)}
             <button className="lull-btn" aria-label={soundOn ? "Mute sound" : "Unmute sound"} aria-pressed={soundOn} onClick={toggleSound} style={{ padding: 8, opacity: 0.7, display: "flex" }}>{soundOn ? <Volume2 size={20} /> : <VolumeX size={20} />}</button>
           </div>
@@ -1330,22 +1343,28 @@ export default function Lull() {
           </div>
           {soundOwned("binaural") && (<p style={{ fontSize: 12, opacity: 0.5, margin: "0 0 24px", letterSpacing: 0.2 }}>Binaural is best with headphones.</p>)}
 
-          {/* Your mixes — the blends you saved, ready to breathe or sleep with. Build new ones with the Sounds wave icon. */}
-          {mixPresets.length > 0 && (<>
-            <div style={{ fontSize: 11, letterSpacing: 3, textTransform: "uppercase", fontWeight: 600, opacity: 0.5, marginBottom: 13 }}>Your mixes</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(94px, 1fr))", gap: 11, marginBottom: 24 }}>
-              {mixPresets.map((pr) => {
-                const ref = "mix:" + pr.id; const sel = activeSoundId === ref;
-                return (
-                  <button key={pr.id} className="lull-btn" aria-pressed={sel} aria-label={"Use mix " + pr.name} onClick={() => selectSound(ref)} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 9, padding: "15px 8px 12px", borderRadius: 18, background: sel ? wa(0.09) : wa(0.03), border: "1px solid " + (sel ? wa(0.34) : wa(0.1)), boxShadow: sel ? "0 8px 22px -14px rgba(0,0,0,0.55)" : "none", transition: "border-color .2s ease, background .2s ease" }}>
+          {/* Your mixes — saved blends live here with the sounds. Tap to use, ✎ to edit, or build a new one. */}
+          <div style={{ fontSize: 11, letterSpacing: 3, textTransform: "uppercase", fontWeight: 600, opacity: 0.5, marginBottom: 13 }}>Your mixes</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(94px, 1fr))", gap: 11, marginBottom: 24 }}>
+            {mixPresets.map((pr) => {
+              const ref = "mix:" + pr.id; const sel = activeSoundId === ref;
+              return (
+                <div key={pr.id} style={{ position: "relative" }}>
+                  <button className="lull-btn" aria-pressed={sel} aria-label={"Use mix " + pr.name} onClick={() => selectSound(ref)} style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 9, padding: "15px 8px 12px", borderRadius: 18, background: sel ? wa(0.09) : wa(0.03), border: "1px solid " + (sel ? wa(0.34) : wa(0.1)), boxShadow: sel ? "0 8px 22px -14px rgba(0,0,0,0.55)" : "none", transition: "border-color .2s ease, background .2s ease" }}>
                     {soundChipFor(ref, 58)}
                     <span style={{ fontSize: 13, fontWeight: 600, letterSpacing: 0.2, textAlign: "center", lineHeight: 1.15 }}>{pr.name}</span>
                     <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.7, textTransform: "uppercase", color: sel ? inkA(0.72) : inkA(0.36) }}>{sel ? "In use" : "Tap to use"}</span>
                   </button>
-                );
-              })}
-            </div>
-          </>)}
+                  <button className="lull-btn" aria-label={"Edit " + pr.name} onClick={() => editMix(pr)} style={{ position: "absolute", top: 7, right: 7, width: 26, height: 26, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: inkA(0.72), background: wa(0.16), border: "1px solid " + wa(0.16) }}>✎</button>
+                </div>
+              );
+            })}
+            <button className="lull-btn" aria-label="Create a new mix" onClick={newMix} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 9, padding: "15px 8px 12px", borderRadius: 18, background: wa(0.02), border: "1px dashed " + wa(0.28), transition: "border-color .2s ease, background .2s ease" }}>
+              <div style={{ width: 58, height: 58, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: wa(0.05), border: "1px solid " + wa(0.14), fontSize: 26, fontWeight: 200, lineHeight: 1 }}>＋</div>
+              <span style={{ fontSize: 13, fontWeight: 600, letterSpacing: 0.2 }}>New mix</span>
+              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.7, textTransform: "uppercase", color: inkA(0.36) }}>Build a blend</span>
+            </button>
+          </div>
 
           {/* Offers — bundle hero + packs, each hidden once fully owned */}
           {!allOwned && (
@@ -1553,9 +1572,9 @@ export default function Lull() {
         <div style={{ position: "fixed", inset: 0, zIndex: 70, backgroundColor: groundSolid, backgroundImage: groundBg, color: ink, display: "flex", flexDirection: "column", padding: "max(30px, calc(env(safe-area-inset-top) + 12px)) 26px calc(34px + env(safe-area-inset-bottom))", overflowY: "auto" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
             <span style={{ fontSize: 12, letterSpacing: 5, textTransform: "uppercase", fontWeight: 500, opacity: 0.6 }}>Ambient sounds</span>
-            <button className="lull-btn" aria-label="Close" onClick={() => setMixerOpen(false)} style={{ padding: "6px 4px", opacity: 0.75, fontSize: 15 }}>Done</button>
+            <button className="lull-btn" aria-label="Close" onClick={closeMixer} style={{ padding: "6px 4px", opacity: 0.75, fontSize: 15 }}>Done</button>
           </div>
-          <p style={{ fontSize: 13, lineHeight: 1.5, opacity: 0.55, margin: "0 0 24px", maxWidth: "42ch" }}>Blend nature sounds into your own mix and let it play. No timer, no session. Slide a sound up to hear it.</p>
+          <p style={{ fontSize: 13, lineHeight: 1.5, opacity: 0.55, margin: "0 0 24px", maxWidth: "42ch" }}>{editingPresetId ? "Editing a saved mix. Adjust the sliders, then Update to save your changes." : "Blend nature sounds into your own mix and let it play. No timer, no session. Slide a sound up to hear it."}</p>
           {(() => {
             const owned = NATURE_IDS.filter((id) => soundOwned(id));
             if (!owned.length) return (
@@ -1597,8 +1616,8 @@ export default function Lull() {
                 {savingMix ? (
                   <div style={{ display: "flex", gap: 8, marginTop: 14, alignItems: "center" }}>
                     <input autoFocus value={mixName} maxLength={24} onChange={(e) => setMixName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") saveMixPreset(); else if (e.key === "Escape") { setSavingMix(false); setMixName(""); } }} placeholder="Name this mix" style={{ flex: 1, minWidth: 0, padding: "10px 14px", borderRadius: 999, background: wa(0.06), border: "1px solid " + wa(0.22), color: ink, fontSize: 14, fontFamily: "inherit", outline: "none" }} />
-                    <button className="lull-btn" onClick={saveMixPreset} style={{ padding: "10px 18px", borderRadius: 999, fontSize: 13.5, fontWeight: 600, color: "#fff", background: "linear-gradient(180deg, #9a86ff 0%, #6f5cff 100%)" }}>Save</button>
-                    <button className="lull-btn" onClick={() => { setSavingMix(false); setMixName(""); }} style={{ padding: "10px 4px", fontSize: 13, color: inkA(0.5) }}>Cancel</button>
+                    <button className="lull-btn" onClick={saveMixPreset} style={{ padding: "10px 18px", borderRadius: 999, fontSize: 13.5, fontWeight: 600, color: "#fff", background: "linear-gradient(180deg, #9a86ff 0%, #6f5cff 100%)" }}>{editingPresetId ? "Update" : "Save"}</button>
+                    <button className="lull-btn" onClick={() => { setSavingMix(false); setMixName(""); setEditingPresetId(null); }} style={{ padding: "10px 4px", fontSize: 13, color: inkA(0.5) }}>Cancel</button>
                   </div>
                 ) : (owned.some((id) => (mix[id] || 0) > 0) && (
                   <button className="lull-btn" onClick={beginSaveMix} style={{ marginTop: 14, padding: "9px 18px", borderRadius: 999, fontSize: 13, fontWeight: 600, letterSpacing: 0.3, color: ink, background: wa(0.06), border: "1px dashed " + wa(0.3), display: "inline-flex", alignItems: "center", gap: 7 }}><span aria-hidden="true" style={{ fontSize: 14, opacity: 0.85 }}>＋</span>Save this mix</button>
