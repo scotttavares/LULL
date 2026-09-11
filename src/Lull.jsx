@@ -156,6 +156,7 @@ const SOUND = [
   { id: "binaural", name: "Binaural", tag: "Deep tones", glyph: "🎧", tint: "#6fb2ff", free: true, bed: true },
   { id: "noise", name: "White noise", tag: "Steady hush", glyph: "🌫️", tint: "#aebdd6", free: true, bed: true },
   { id: "rain", name: "Rain", tag: "Steady rainfall", glyph: "🌧️", tint: "#7fa8d8", pack: "nature", bed: true },
+  { id: "lightrain", name: "Light rain", tag: "Soft patter for sleep", glyph: "💧", tint: "#9fc4e0", pack: "nature", bed: true },
   { id: "ocean", name: "Ocean", tag: "Rolling waves", glyph: "🌊", tint: "#4fc4d0", pack: "nature", bed: true },
   { id: "forest", name: "Forest", tag: "Wind & birdsong", glyph: "🌲", tint: "#79c88a", pack: "nature", bed: true },
   { id: "fire", name: "Fire", tag: "Crackling hearth", glyph: "🔥", tint: "#ff8a5c", pack: "nature", bed: true },
@@ -189,7 +190,7 @@ function ringsSVG(palette, opts = {}) {
   );
 }
 const SOUND_PACKS = {
-  nature: { name: "Nature Pack", tag: "Rain, ocean, forest & fire", price: 0.99, sounds: ["rain", "ocean", "forest", "fire"] },
+  nature: { name: "Nature Pack", tag: "Rain, light rain, ocean, forest & fire", price: 0.99, sounds: ["rain", "lightrain", "ocean", "forest", "fire"] },
 };
 const SOUND_PACK_ORDER = ["nature"];
 const FREE_SOUNDS = SOUND.filter((s) => s.free).map((s) => s.id);
@@ -374,6 +375,7 @@ let _hushUrl = null; const hushUrl = () => (_hushUrl || (_hushUrl = makeHushData
 
 const NATURE_AUDIO = {
   rain: { url: "/assets/rain.mp3", gain: 24 },
+  lightrain: { url: "/assets/lightrain.wav", gain: 1.2 }, // soft, sparse rain for sleep (real recording, seamless loop)
   ocean: { url: "/assets/ocean.wav", gain: 1.8 }, // calm rolling ocean waves (real recording, seamless loop, no birds)
   forest: { url: "/assets/forest.mp3", gain: 57 },
   // Fire's crackles are sharp transients (very high crest), so a plain gain loud enough to hear the
