@@ -378,9 +378,9 @@ const NATURE_AUDIO = {
   lightrain: { url: "/assets/lightrain.wav", gain: 1.2 }, // soft, sparse rain for sleep (real recording, seamless loop)
   ocean: { url: "/assets/ocean.wav", gain: 1.8 }, // calm rolling ocean waves (real recording, seamless loop, no birds)
   forest: { url: "/assets/forest.mp3", gain: 57 },
-  // Fire's crackles are sharp transients (very high crest), so a plain gain loud enough to hear the
-  // bed would clip the pops. `limit` inserts a limiter that tames the peaks so we can bring it up.
-  fire: { url: "/assets/fire.mp3", gain: 14, limit: true },
+  // Calmer, sleep-friendly fire: the source was compressed to tame the sharp snaps and low-passed for
+  // warmth before export, so it needs no live limiter now — just a gentle level.
+  fire: { url: "/assets/fire.wav", gain: 1.0 },
   // White noise: generated lazily on first use (url filled in by createNatureNode via hushUrl()).
   noise: { url: "", gain: 1.0 },
 };
