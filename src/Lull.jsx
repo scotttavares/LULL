@@ -158,7 +158,7 @@ const SOUND = [
   { id: "rain", name: "Rain", tag: "Steady rainfall", glyph: "🌧️", tint: "#7fa8d8", pack: "nature", bed: true },
   { id: "lightrain", name: "Light rain", tag: "Soft patter for sleep", glyph: "💧", tint: "#9fc4e0", pack: "nature", bed: true },
   { id: "ocean", name: "Ocean", tag: "Rolling waves", glyph: "🌊", tint: "#4fc4d0", pack: "nature", bed: true },
-  { id: "forest", name: "Forest", tag: "Wind & birdsong", glyph: "🌲", tint: "#79c88a", pack: "nature", bed: true },
+  { id: "forest", name: "Forest", tag: "Soft, distant woods", glyph: "🌲", tint: "#79c88a", pack: "nature", bed: true },
   { id: "fire", name: "Fire", tag: "Crackling hearth", glyph: "🔥", tint: "#ff8a5c", pack: "nature", bed: true },
 ];
 const SOUND_BY_ID = Object.fromEntries(SOUND.map((s) => [s.id, s]));
@@ -377,7 +377,7 @@ const NATURE_AUDIO = {
   rain: { url: "/assets/rain.mp3", gain: 24 },
   lightrain: { url: "/assets/lightrain.wav", gain: 1.2 }, // soft, sparse rain for sleep (real recording, seamless loop)
   ocean: { url: "/assets/ocean.wav", gain: 1.8 }, // calm rolling ocean waves (real recording, seamless loop, no birds)
-  forest: { url: "/assets/forest.mp3", gain: 57 },
+  forest: { url: "/assets/forest.wav", gain: 0.6 }, // soft, distant forest for sleep (low-passed to remove the shrill high birds)
   // Calmer, sleep-friendly fire: the source was compressed to tame the sharp snaps and low-passed for
   // warmth before export, so it needs no live limiter now — just a gentle level.
   fire: { url: "/assets/fire.wav", gain: 1.0 },
