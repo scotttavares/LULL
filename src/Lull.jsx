@@ -380,7 +380,7 @@ const NATURE_AUDIO = {
   forest: { url: "/assets/forest.wav", gain: 0.6 }, // soft, distant forest for sleep (low-passed to remove the shrill high birds)
   // Calmer, sleep-friendly fire: the source was compressed to tame the sharp snaps and low-passed for
   // warmth before export, so it needs no live limiter now — just a gentle level.
-  fire: { url: "/assets/fire.wav", gain: 1.0 },
+  fire: { url: "/assets/fire.wav", gain: 1.5 },
   // White noise: generated lazily on first use (url filled in by createNatureNode via hushUrl()).
   noise: { url: "", gain: 1.0 },
 };
