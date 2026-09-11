@@ -151,8 +151,8 @@ function pickReadyLine(mood) {
 // Soundscapes: three ship free; others unlock via a sound pack (or the Everything bundle).
 // Each is generated procedurally in createSoundscape — no audio files. `pack` names the pack it belongs to.
 const SOUND = [
-  { id: "bowls", name: "Bowls", tag: "Singing bowls", glyph: "🎵", tint: "#9a86ff", img: "/assets/sound-bowls.webp", free: true },
-  { id: "handpan", name: "Handpan", tag: "Hand drum", glyph: "🪘", tint: "#ffb27a", img: "/assets/sound-handpan.webp", free: true },
+  { id: "bowls", name: "Bowls", tag: "Singing bowls", glyph: "🎵", tint: "#9a86ff", img: "/assets/sound-bowls.webp", free: true, bed: true },
+  { id: "handpan", name: "Handpan", tag: "Hand drum", glyph: "🪘", tint: "#ffb27a", img: "/assets/sound-handpan.webp", free: true, bed: true },
   { id: "binaural", name: "Binaural", tag: "Deep tones", glyph: "🎧", tint: "#6fb2ff", free: true, bed: true },
   { id: "noise", name: "White noise", tag: "Steady hush", glyph: "🌫️", tint: "#aebdd6", free: true, bed: true },
   { id: "rain", name: "Rain", tag: "Steady rainfall", glyph: "🌧️", tint: "#7fa8d8", pack: "nature", bed: true },
@@ -415,7 +415,7 @@ function createNatureNode(ctx, out, id, level) {
   };
 }
 
-function createSoundscape(id, ctx, master, reverb, buffers, mode) {
+function createSoundscape(id, ctx, master, reverb, buffers, mode, selfPlay) {
   // A saved mix bed: play several nature beds together, each at its own saved level.
   if (id && typeof id === "object" && id.mix) {
     const ns = [];
@@ -447,6 +447,8 @@ function createSoundscape(id, ctx, master, reverb, buffers, mode) {
     api.onPhase = (phase) => { if (phase.key === "inhale") note(true); else if (phase.key === "exhale") note(false); };
     api.onStart = () => note(false);
     api.onDone = () => { if (mode === "breathe") pingNote(ctx, master, reverb, { freq: scale[0], partials: HP_PARTIALS, attack: 0.004, vol: 0.12, lp: 3200 }); };
+    // Sound-only: no breath to trigger notes, so play soft ones on a slow, random timer (a calm handpan bed).
+    if (selfPlay) every(() => note(Math.random() < 0.5), () => 3200 + Math.random() * 5200);
   } else if (id === "binaural") {
     wet.gain.value = 0.15;
     const cfg = mode === "sleep" ? { f: 150, beat: 3.2 } : { f: 200, beat: 10 };
@@ -507,6 +509,8 @@ function createSoundscape(id, ctx, master, reverb, buffers, mode) {
     api.onStart = () => strike(cfg.bin * 0.5, false);
     api.onDone = () => { if (mode === "breathe") { strike(cfg.bin * 0.75, true); pingNote(ctx, master, reverb, { freq: cfg.bin * 1.12, partials: [{ r: 1, g: 0.6, d: 5 }], attack: 0.06, vol: cfg.vol }); } };
     api.soften = () => { const t = ctx.currentTime; const g = padGain.gain; g.cancelScheduledValues(t); g.setValueAtTime(Math.max(g.value, 0.0001), t); g.linearRampToValueAtTime(cfg.low * 0.7, t + 1.4); };
+    // Sound-only: no breath to raise the pad or trigger strikes, so bring the pad up and ring soft bowls on a slow timer.
+    if (selfPlay) { const t0 = ctx.currentTime; padGain.gain.cancelScheduledValues(t0); padGain.gain.setValueAtTime(0.0001, t0); padGain.gain.exponentialRampToValueAtTime(cfg.peak * 0.45, t0 + 4); every(() => strike(Math.random() < 0.5 ? cfg.bin : cfg.bout, false), () => 4200 + Math.random() * 6000); }
   }
   return api;
 }
@@ -698,7 +702,7 @@ export default function Lull() {
     if (!audioRef.current || !nodesRef.current || scapeRef.current) return;
     let sel = sessionScapeRef.current || scapeIdRef.current; // a sound id or a "mix:<id>" reference
     if (typeof sel === "string" && sel.slice(0, 4) === "mix:") { const pr = mixPresetsRef.current.find((p) => "mix:" + p.id === sel); sel = pr && pr.mix ? { mix: pr.mix } : "noise"; }
-    scapeRef.current = createSoundscape(sel, audioRef.current, nodesRef.current.master, nodesRef.current.reverb, { white: whiteRef.current, brown: brownRef.current }, modeRef.current);
+    scapeRef.current = createSoundscape(sel, audioRef.current, nodesRef.current.master, nodesRef.current.reverb, { white: whiteRef.current, brown: brownRef.current }, modeRef.current, soundOnlyRef.current);
   };
   const teardownAmbience = (fade = 1.2) => { try { if (scapeRef.current) scapeRef.current.stop(fade); } catch (e) {} scapeRef.current = null; };
   const breathAudio = (phase) => { try { if (scapeRef.current) scapeRef.current.onPhase(phase, modeRef.current); } catch (e) {} };
